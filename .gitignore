@@ -1,0 +1,15 @@
+# 模型檔太大，不進版控
+*.gguf
+*.safetensors
+*.bin
+
+# 執行產物
+*.exe
+*.log
+__pycache__/
+*.pyc
+
+# 個人測試殘留
+work/
+test/
+sample-output/
