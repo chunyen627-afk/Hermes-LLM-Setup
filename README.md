@@ -101,7 +101,6 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 |---|---|
 | `gpu-host/` | GPU 主機的啟動器、選單、橋接器 |
 | `client/` | 用戶端要複製過去的檔案 |
-| `skills/` | 技能包（按需載入，省 context） |
 | `docs/` | 詳細設定、VRAM 估算、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
 
