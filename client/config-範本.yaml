@@ -1,0 +1,59 @@
+# Hermes config.yaml 需要改的部分
+#
+# ⚠ 這不是完整設定檔，只列出「跟本專案有關、必須改」的項目。
+#    Hermes 的 config.yaml 有 1000+ 行，找到對應項目改掉即可。
+#
+# 先確認你要改哪個檔（有兩個容易搞混）：
+#     hermes config path
+# 通常是 C:\Users\<你>\AppData\Local\hermes\config.yaml
+# 不是   C:\Users\<你>\.hermes\config.yaml
+#
+# 改完驗證：hermes config show
+
+model:
+  # ⚠ 一定要 lmstudio，不能選 ollama（那個走 Ollama 雲端服務，不是本機）
+  provider: lmstudio
+
+  # 要跟 llama-server 的 --alias 完全一致
+  default: qwen38_mtp
+
+  # 要跟 llama-server 的 --ctx-size 完全一致
+  # 設太大 → 塞爆才發現；設太小 → 浪費空間
+  # 用 3-CHECK-CTX.bat <IP> 查伺服器實際值
+  context_length: 180224
+
+
+# 約 566 行附近
+agent:
+  # 單次 run 的工具呼叫迭代上限，每則新訊息重新計數
+  # 安裝預設可能是 60 或 90 → 通宵任務會半夜停掉
+  # 500 約可跑 20 小時
+  max_turns: 500
+
+
+# 約 356 行附近
+compression:
+  # 快滿時自動壓縮舊對話，不開的話會直接撞牆
+  enabled: true
+
+  # 觸發點（佔 context_length 的比例）
+  # 0.50 = 90K 就壓縮（保守）
+  # 0.80 = 144K 才壓縮（長任務建議，保留更多上下文）
+  threshold: 0.80
+
+  # 若你的版本有這個選項：壓縮失敗時明確報錯而非默默撞牆
+  # abort_on_summary_failure: true
+
+
+# 約 864 行附近
+code_execution:
+  # 單次 code execution 內的 RPC 呼叫上限（跟 max_turns 不同層級）
+  # 預設 50，複雜任務不夠
+  max_tool_calls: 100
+
+
+# 約 1001 行附近
+ui:
+  # 看得到模型的思考過程
+  # 長任務卡住時，這是分辨「在思考」還是「繞圈」的關鍵
+  show_reasoning: true

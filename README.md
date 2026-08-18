@@ -91,6 +91,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
    python hermes_bridge.py <GPU主機IP>
    ```
 5. 設定 Hermes → 見 [docs/用戶端設定.md](docs/用戶端設定.md)
+   ⚠ 要跑長任務（幾小時以上）務必先看 [docs/長時間任務設定.md](docs/長時間任務設定.md) —— `max_turns` 預設值會讓通宵任務半夜停掉
 6. 驗證：`hermes -z "說 ok" --yolo`
 
 ---
@@ -101,7 +102,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 |---|---|
 | `gpu-host/` | GPU 主機的啟動器、選單、橋接器 |
 | `client/` | 用戶端要複製過去的檔案 |
-| `docs/` | 詳細設定、VRAM 估算、踩過的坑 |
+| `docs/` | 詳細設定、VRAM 估算、長時間任務、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
 
 ---
@@ -165,6 +166,7 @@ model:
 | 400 錯誤 `System message must be at the beginning` | chat template 有 `raise_exception` | 用本 repo 的 template |
 | 對話突然爆掉 | `context_length` 兩邊不一致 | 用 `3-CHECK-CTX.bat` 查伺服器實際值 |
 | 顯示 Sonnet/Claude 而非本地模型 | 環境變數沒設成功 | 檢查 bat 的變數展開 |
+| 通宵任務半夜就停了 | `max_turns` 太小（預設 60-90） | 改成 500，見 [長時間任務設定](docs/長時間任務設定.md) |
 
 完整清單 → [docs/踩過的坑.md](docs/踩過的坑.md)
 
