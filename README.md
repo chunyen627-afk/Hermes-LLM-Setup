@@ -148,7 +148,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 |---|---|
 | `gpu-host/` | 啟動器、開機選單、橋接器、監控工具 |
 | `client/` | 用戶端要複製過去的檔案 |
-| `docs/` | 能力評估、詳細設定、VRAM 估算、效能調校、推理強度、長時間任務、踩過的坑 |
+| `docs/` | 能力評估、詳細設定、VRAM 估算、效能調校、推測解碼、推理強度、長時間任務、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
 
 ---
@@ -164,6 +164,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 | **176K** | **q4_0** | ✅ **採用**，壓測到 131K 穩定 |
 
 - 生成速度 **23.7 tok/s**（MTP 開啟；關掉只有 10.6）
+- DFlash 可再快 1.8 倍但 ctx 掉到 96K → [不划算，見比較](docs/推測解碼比較.md)
 - prompt 處理 **488 tok/s** ← 這才是主要瓶頸，比生成慢 13 倍
 - MTP draft acceptance **43%**
 - prompt cache 命中率 **95-97%**
