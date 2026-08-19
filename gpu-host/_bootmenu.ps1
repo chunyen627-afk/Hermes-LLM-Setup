@@ -5,9 +5,9 @@ $ErrorActionPreference = 'Continue'
 $timeout = 10
 
 $menu = @(
-    @{ Key='1'; Name='韌體設計 (預設)'; Think='high'; Mode='fw';   Ctx=180224; Desc='STM32/RTOS。實測 3098 項測試 0 失敗，慢但品質最好' }
+    @{ Key='1'; Name='韌體設計 (預設)'; Think='low';  Mode='fw';   Ctx=180224; Desc='STM32/RTOS 日常。多輪除錯用這個，反應快' }
     @{ Key='2'; Name='一般寫 code';     Think='off';  Mode='chat'; Ctx=180224; Desc='寫程式/網頁/遊戲，最順的組合' }
-    @{ Key='3'; Name='快速模式';         Think='off';  Mode='fw';   Ctx=180224; Desc='趕時間或簡單任務。品質較差（55 項測試錯 1）' }
+    @{ Key='3'; Name='深度推理 (很慢)';   Think='high'; Mode='fw';   Ctx=180224; Desc='單一大模組才用。品質最好但連說 ok 都要 80 秒' }
     @{ Key='4'; Name='長 context 模式';  Think='off';  Mode='chat'; Ctx=212992; Desc='208K ctx，讀大量檔案用（VRAM 很緊，可能失敗）' }
     @{ Key='5'; Name='不啟動';           Think=$null }
 )

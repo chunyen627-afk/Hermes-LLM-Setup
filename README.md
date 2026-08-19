@@ -102,7 +102,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 |---|---|
 | `gpu-host/` | GPU 主機的啟動器、選單、橋接器 |
 | `client/` | 用戶端要複製過去的檔案 |
-| `docs/` | 詳細設定、VRAM 估算、長時間任務、踩過的坑 |
+| `docs/` | 詳細設定、VRAM 估算、推理強度、長時間任務、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
 
 ---
@@ -122,16 +122,22 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 - MTP draft acceptance **43%**
 - prompt cache 命中率 **95-97%**
 
-### think 模式的取捨（Hermes 下實測）
+### 推理強度（最容易搞錯的一項）
 
-| | think=off | **think=high** |
-|---|---|---|
-| 完成時間 | 376 秒 | ~1500 秒 |
-| 測試結果 | 55 項錯 1 項 | **3098 項 0 失敗** |
-| 程式碼 | 6669 bytes | **5339 bytes**（更精簡卻更正確） |
+同一句「說 ok」：**`low` 2.5 秒 vs `high` 80 秒**（差 32 倍）。
 
-**要品質選 high，趕時間選 off。**
-⚠ 這跟 Claude Code 下的結論**相反** —— 那邊 prompt 太大，think 會繞圈。
+| 任務類型 | 建議 |
+|---|---|
+| **多輪除錯**（改→測→再改） | **`low`** ← 本 repo 預設 |
+| 一次寫完整個模組 | `high`（品質確實較好，但慢 4 倍） |
+| 閒聊查資料 | `off` |
+
+⚠ 三個容易踩的點：
+- Hermes GUI 的推理強度選單**其實不生效**，真正決定的是伺服器啟動參數
+- GUI 選「最小」或「最高」會 **HTTP 500**（這模型只吃 low/medium/high/xhigh）
+- `--reasoning-budget` **沒有硬約束力**，2048 照樣可以繞 18 分鐘
+
+完整實測 → [docs/推理強度設定.md](docs/推理強度設定.md)
 
 ---
 
@@ -167,6 +173,8 @@ model:
 | 對話突然爆掉 | `context_length` 兩邊不一致 | 用 `3-CHECK-CTX.bat` 查伺服器實際值 |
 | 顯示 Sonnet/Claude 而非本地模型 | 環境變數沒設成功 | 檢查 bat 的變數展開 |
 | 通宵任務半夜就停了 | `max_turns` 太小（預設 60-90） | 改成 500，見 [長時間任務設定](docs/長時間任務設定.md) |
+| 速度突然掉到 0.3 tok/s | 推理強度設太高 | 改 `low`，見 [推理強度設定](docs/推理強度設定.md) |
+| 想看遠端那台在做什麼 | — | GPU 主機跑 `4-WATCH.bat` |
 
 完整清單 → [docs/踩過的坑.md](docs/踩過的坑.md)
 
