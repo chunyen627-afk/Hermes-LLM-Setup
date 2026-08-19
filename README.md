@@ -102,7 +102,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 |---|---|
 | `gpu-host/` | GPU 主機的啟動器、選單、橋接器 |
 | `client/` | 用戶端要複製過去的檔案 |
-| `docs/` | 詳細設定、VRAM 估算、推理強度、長時間任務、踩過的坑 |
+| `docs/` | 詳細設定、VRAM 估算、效能調校、推理強度、長時間任務、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
 
 ---
@@ -117,8 +117,8 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 | 192K | q4_0 | ⚠️ 可跑但邊界緊 |
 | **176K** | **q4_0** | ✅ **採用**，壓測到 131K 穩定 |
 
-- 生成速度 **11-18 tok/s**
-- prompt 處理約 **600 tok/s**
+- 生成速度 **23.7 tok/s**（MTP 開啟；關掉只有 10.6）
+- prompt 處理 **488 tok/s** ← 這才是主要瓶頸，比生成慢 13 倍
 - MTP draft acceptance **43%**
 - prompt cache 命中率 **95-97%**
 
@@ -177,6 +177,7 @@ model:
 | 想看遠端那台在做什麼 | — | GPU 主機跑 `4-WATCH.bat` |
 
 完整清單 → [docs/踩過的坑.md](docs/踩過的坑.md)
+效能相關 → [docs/效能調校實測.md](docs/效能調校實測.md)
 
 ---
 
