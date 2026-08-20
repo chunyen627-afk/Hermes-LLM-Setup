@@ -109,16 +109,55 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 
 ### B. 用戶端電腦
 
-1. 裝 [Hermes Agent](https://hermes-agent.ai)
-2. 加入同一個 ZeroTier 網路（或同區網）
-3. 複製 `client/` 過去
-4. 跑橋接器（**視窗不要關**）：
-   ```bash
-   python hermes_bridge.py <GPU主機IP>
-   ```
-5. 設定 Hermes → 見 [docs/用戶端設定.md](docs/用戶端設定.md)
-   ⚠ 要跑長任務（幾小時以上）務必先看 [docs/長時間任務設定.md](docs/長時間任務設定.md) —— `max_turns` 預設值會讓通宵任務半夜停掉
-6. 驗證：`hermes -z "說 ok" --yolo`
+**1. 裝 Hermes 桌面版**
+
+用官方安裝檔：<https://hermes-assets.nousresearch.com/Hermes-Setup.exe>
+
+⚠ **不要用 `hermes update`（git 版）** —— 會弄壞 venv（`click`、`pip` 消失），
+而且內建的 `Repair install` 修不了。見「踩過的坑」#19。
+
+⚠ 裝完會跳 setup wizard，**按 Ctrl+C 跳過**。選 1（Nous Portal）
+會把設定改成雲端。
+
+**2. 加入同一個 ZeroTier 網路**（或同區網）
+
+**3. 複製 `client/` 過去，跑橋接器**（視窗不要關）：
+```bash
+python hermes_bridge.py <GPU主機IP>
+```
+
+**4. 一鍵設定 Hermes**
+
+```powershell
+.\SETUP-HERMES.ps1 -GeminiKey "AIza..."
+```
+
+這支腳本一次改對五組設定 —— 官方預設值有五個地方會讓本地 LLM
+跑不起來或跑不完：
+
+| 設定 | 官方預設 | 不改的後果 |
+|---|---|---|
+| `model.provider` | `vertex` | 請求打到 Google，噴 `400 Malformed publisher model` |
+| `agent.max_turns` | `60` | 長任務每 60 次工具呼叫被腰斬（實測一個專案用掉 186 次）|
+| `approvals.mode` | 開著 | 模型跑編譯要等你按確認，60 秒逾時就 BLOCKED |
+| `compression.enabled` | `false` | 長對話撞 ctx 上限 |
+| `auxiliary.*.provider` | `auto` | 壓縮用本地模型會超時取消、視覺回 500 |
+
+`-GeminiKey` 是選用的，但**強烈建議給**：壓縮和看圖交給雲端小模型，
+主模型仍然全程走本地。免費 key 在
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey)，
+不用綁卡。
+
+不想用腳本就照 [docs/用戶端設定.md](docs/用戶端設定.md) 手動設。
+
+**5. 重啟 Hermes，然後開新對話**
+
+⚠ 設定改完**一定要重啟**，而且**已經開著的對話不會跟著換** ——
+session 會把 provider 凍結在 `state.db`，要開新對話。見「踩過的坑」#16。
+
+**6. 驗證**：`hermes -z "說 ok" --yolo`
+
+橋接器視窗會印一行 `本機推論 OK`，**有印就代表走本機不是雲端**。
 
 ---
 
@@ -147,7 +186,7 @@ Register-ScheduledTask -TaskName 'LLM-GPU-Server' -Action $act -Trigger $trg -Fo
 | 目錄 | 內容 |
 |---|---|
 | `gpu-host/` | 啟動器、開機選單、橋接器、監控工具 |
-| `client/` | 用戶端要複製過去的檔案 |
+| `client/` | 用戶端要複製過去的檔案（含 `SETUP-HERMES.ps1` 一鍵設定）|
 | `docs/` | 能力評估、詳細設定、VRAM 估算、效能調校、推測解碼、推理強度、長時間任務、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
 
@@ -222,6 +261,12 @@ model:
 | 通宵任務半夜就停了 | `max_turns` 太小（預設 60-90） | 改成 500，見 [長時間任務設定](docs/長時間任務設定.md) |
 | 速度突然掉到 0.3 tok/s | 推理強度設太高 | 改 `low`，見 [推理強度設定](docs/推理強度設定.md) |
 | 想看遠端那台在做什麼 | — | GPU 主機跑 `4-WATCH.bat` |
+| `400 Malformed publisher model` | 官方安裝程式預設 `provider: vertex` | 跑 `SETUP-HERMES.ps1`，見 #15 |
+| 改了 config 舊對話還是連雲端 | session 把 provider 凍結在 `state.db` | **開新對話**，見 #16 |
+| 模型跑編譯被 `BLOCKED` | 授權逾時 60 秒，且明確禁止重試 | `approvals.mode off`，見 #17 |
+| ctx 一直漲、壓縮沒作用 | 壓縮用本地模型，120 秒沒吐 token 被取消 | 壓縮改用 Gemini，見 #22 |
+| `vision_analyze` 回 502 | 視覺預設走主模型，Qwen3.8 不支援看圖 | 視覺改用 Gemini，見 #23 |
+| 桌面版 `backend exited before ready` | `hermes update` 弄壞 venv（`click` 沒了）| 官方安裝檔重裝，見 #19 |
 
 完整清單 → [docs/踩過的坑.md](docs/踩過的坑.md)
 效能相關 → [docs/效能調校實測.md](docs/效能調校實測.md)

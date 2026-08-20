@@ -63,7 +63,14 @@ def _watch(interval):
                 warn.append(f'快取只有 {hit}% —— 可能有第二個對話在搶 slot')
             if busy and proc > 20000 and proc < used * 0.9:
                 warn.append(f'重算 {proc:,} tokens —— 約 {proc//490} 秒純等待')
-            if pct > 85:
+            # 壓縮觸發點（Hermes 的 compression.threshold 設 0.8）
+            trigger = int(n * 0.8)
+            if used >= trigger:
+                warn.append(f'★ 已過壓縮觸發點 {trigger:,} —— 下次請求會壓縮，'
+                            f'那一次要等 2-5 分鐘，不是當機')
+            elif trigger - used < 10000:
+                warn.append(f'★ 離壓縮觸發點只剩 {trigger-used:,} tokens')
+            elif pct > 85:
                 warn.append(f'ctx 用了 {pct}% —— 快滿了')
             if warn:
                 print('       ⚠ ' + ' | '.join(warn), flush=True)
