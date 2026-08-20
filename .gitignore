@@ -13,3 +13,22 @@ __pycache__/
 work/
 test/
 sample-output/
+
+# === 憑證與金鑰：絕對不要進版控 ===
+# Hermes 的 config.yaml 會存 API key（auxiliary.vision.api_key 等），
+# .env 也會。這兩個是個人設定，本來就不該共用。
+.env
+.env.*
+config.yaml
+config.yml
+*config.yaml.bak*
+auth.json
+*.key
+*.pem
+credentials.json
+secrets.*
+
+# 範本可以進版控（不含真實金鑰）
+!config-範本.yaml
+!*.example
+!*.template
