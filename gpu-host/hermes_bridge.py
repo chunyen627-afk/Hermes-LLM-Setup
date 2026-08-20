@@ -1,4 +1,4 @@
-import http.server, json, sys, threading, time, urllib.error, urllib.request
+import http.server, json, re, subprocess, sys, threading, time, urllib.error, urllib.request
 
 GPU = sys.argv[1] if len(sys.argv) > 1 else '10.35.219.64'
 UP = f'http://{GPU}:8001'
@@ -14,6 +14,21 @@ PROBE_PATHS = ('/api/v1/models', '/api/tags', '/api/version',
 _n = 0
 
 
+def _gpu():
+    """讀三張卡的 VRAM 與使用率。只在 GPU 本機跑得到，遠端就略過。"""
+    try:
+        out = subprocess.run(
+            ['nvidia-smi', '--query-gpu=memory.used,utilization.gpu',
+             '--format=csv,noheader,nounits'],
+            capture_output=True, text=True, timeout=6).stdout.strip()
+        rows = [r.split(',') for r in out.splitlines() if r.strip()]
+        used = [int(r[0]) for r in rows]
+        util = [int(r[1]) for r in rows]
+        return sum(used), '/'.join(str(u) for u in used), max(util) if util else 0
+    except Exception:
+        return None, None, None
+
+
 def _watch(interval):
     """定期讀 GPU 那台的 /slots，印一行 context 用量。壞掉不能影響轉發。"""
     time.sleep(5)
@@ -27,12 +42,32 @@ def _watch(interval):
             proc = s.get('n_prompt_tokens_processed') or 0
             pct = used * 100 // max(n, 1)
             hit = cache * 100 // max(used, 1)
-            state = '推理中' if s.get('is_processing') else '閒置'
-            line = (f'[ctx ] {used:,} / {n:,} ({pct}%)  '
+            busy = bool(s.get('is_processing'))
+            state = '推理中' if busy else '閒置'
+            line = (f'[ctx ] {used:,} / {n:,} ({pct}%)  剩 {n-used:,}  '
                     f'快取 {hit}%  重算 {proc:,}  {state}')
-            if pct > 85:
-                line += '  << 快滿了'
+
+            task = s.get('id_task')
+            if task is not None:
+                line += f'  task#{task}'
+
+            vram_sum, vram_each, gpu_util = _gpu()
+            if vram_sum is not None:
+                line += f'  VRAM {vram_sum/1024:.1f}G ({vram_each})  GPU {gpu_util}%'
+
             print(line, flush=True)
+
+            # 今天查出來的三個拖慢徵兆，出現就明講
+            warn = []
+            if busy and used and proc > 1000 and hit < 60 and proc < used * 0.9:
+                warn.append(f'快取只有 {hit}% —— 可能有第二個對話在搶 slot')
+            if busy and proc > 20000 and proc < used * 0.9:
+                warn.append(f'重算 {proc:,} tokens —— 約 {proc//490} 秒純等待')
+            if pct > 85:
+                warn.append(f'ctx 用了 {pct}% —— 快滿了')
+            if warn:
+                print('       ⚠ ' + ' | '.join(warn), flush=True)
+
         except Exception as e:
             print(f'[ctx ] 讀不到用量: {e}', flush=True)
         time.sleep(interval)
@@ -75,6 +110,17 @@ class B(http.server.BaseHTTPRequestHandler):
         if any(self.path.startswith(p) for p in PROBE_PATHS):
             self._send(200, b'{"data":[],"models":[],"object":"list"}')
             return
+
+        # Hermes 會問單一模型的詳情（/v1/models/<id>），llama-server 沒這個端點 → 404。
+        # 自己組一份回它，不要往上游打，也不要變成 502 紅字。
+        one = re.match(r'^/v\d+/models/(.+)$', self.path.split('?')[0])
+        if one:
+            mid = one.group(1)
+            self._send(200, json.dumps({
+                'id': mid, 'object': 'model', 'created': 0, 'owned_by': 'local',
+                'capabilities': ['completion', 'tools', 'chat'],
+            }).encode())
+            return
         is_infer = 'chat/completions' in self.path or 'messages' in self.path
         t0 = time.time()
         try:
@@ -82,7 +128,7 @@ class B(http.server.BaseHTTPRequestHandler):
                 headers={'Content-Type':'application/json','Authorization':'Bearer lmstudio'})
             with urllib.request.urlopen(r, timeout=1800) as resp:
                 d = resp.read()
-                if '/models' in self.path:      # 關鍵：補 tools 能力
+                if self.path.split('?')[0].rstrip('/').endswith('/models'):      # 關鍵：補 tools 能力
                     j = json.loads(d)
                     for k in ('models','data'):
                         for m in j.get(k, []):
