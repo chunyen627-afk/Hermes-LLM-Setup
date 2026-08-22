@@ -1,4 +1,4 @@
-import http.server, json, re, subprocess, sys, threading, time, urllib.error, urllib.request
+import http.server, json, os, re, subprocess, sys, threading, time, urllib.error, urllib.request
 
 GPU = sys.argv[1] if len(sys.argv) > 1 else '10.35.219.64'
 UP = f'http://{GPU}:8001'
@@ -80,6 +80,84 @@ def _watch(interval):
         time.sleep(interval)
 
 
+
+# === Gemini 看圖 ==========================================================
+# llama-server 沒掛 mmproj（掛了會爆 VRAM），所以圖片在這裡先轉成文字。
+# 手機 App 直連 :1234 就有視覺能力，本地模型完全不知道有圖這回事。
+GEMINI_KEY = os.environ.get('GEMINI_API_KEY', '')
+GEMINI_MODEL = os.environ.get('GEMINI_VISION_MODEL', 'gemini-2.5-flash')
+VISION_PROMPT = ('請把這張圖的內容轉成詳盡的純文字描述：所有文字、數字、'
+                 'UI 佈局、程式碼、錯誤訊息都要寫出來，有介面元素請說明位置。')
+
+
+def _gemini_describe(data_url, user_text):
+    """把 data URL 的圖送 Gemini，回傳文字描述。失敗就丟例外給呼叫端處理。"""
+    raw = data_url
+    mime = 'image/png'
+    if raw.startswith('data:'):
+        head, _, b64 = raw.partition(',')
+        mime = head.split(':', 1)[1].split(';', 1)[0] or mime
+        raw = b64
+    prompt = VISION_PROMPT
+    if user_text:
+        prompt += '\n使用者的問題是：' + user_text
+    payload = {'contents': [{'parts': [
+        {'text': prompt},
+        {'inline_data': {'mime_type': mime, 'data': raw}},
+    ]}]}
+    url = ('https://generativelanguage.googleapis.com/v1beta/models/'
+           + GEMINI_MODEL + ':generateContent?key=' + GEMINI_KEY)
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        d = json.loads(r.read().decode('utf-8'))
+    return d['candidates'][0]['content']['parts'][0]['text']
+
+
+def _strip_images(body):
+    """把請求裡的圖片換成 Gemini 的文字描述。
+
+    沒有圖就原樣回傳（零成本）。OpenAI 格式的 content 可以是字串或
+    [{type:text},{type:image_url}] 陣列，只有後者需要處理。
+    """
+    if not body or b'image_url' not in body:
+        return body, 0
+    try:
+        j = json.loads(body)
+    except Exception:
+        return body, 0
+
+    n = 0
+    for m in j.get('messages', []):
+        c = m.get('content')
+        if not isinstance(c, list):
+            continue
+        texts, images = [], []
+        for part in c:
+            if not isinstance(part, dict):
+                continue
+            if part.get('type') == 'text':
+                texts.append(part.get('text') or '')
+            elif part.get('type') == 'image_url':
+                u = (part.get('image_url') or {}).get('url') or ''
+                if u:
+                    images.append(u)
+        if not images:
+            continue
+        joined = '\n'.join(t for t in texts if t)
+        descs = []
+        for u in images:
+            try:
+                descs.append('[圖片內容]\n' + _gemini_describe(u, joined))
+                n += 1
+            except Exception as e:
+                descs.append('[圖片解析失敗：' + str(e)[:80] + ']')
+        m['content'] = '\n\n'.join(descs + ([joined] if joined else []))
+
+    return json.dumps(j, ensure_ascii=False).encode('utf-8'), n
+
+
 class B(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     def log_message(self, *a): pass
@@ -129,6 +207,16 @@ class B(http.server.BaseHTTPRequestHandler):
             }).encode())
             return
         is_infer = 'chat/completions' in self.path or 'messages' in self.path
+
+        # 圖片先給 Gemini 轉成文字，本地模型只收得到純文字
+        if is_infer and body:
+            try:
+                body, n_img = _strip_images(body)
+                if n_img:
+                    print('[img ] %d 張圖已由 Gemini 轉成文字描述' % n_img,
+                          flush=True)
+            except Exception as e:
+                print('[img ] 圖片處理失敗，原樣轉發:', str(e)[:80], flush=True)
         t0 = time.time()
         try:
             r = urllib.request.Request(UP+self.path, data=body,
@@ -144,8 +232,19 @@ class B(http.server.BaseHTTPRequestHandler):
                 if is_infer:
                     self._log_infer(time.time()-t0, d)
                 self._send(resp.status, d)
+        except urllib.error.HTTPError as e:
+            detail = ''
+            try:
+                detail = e.read().decode('utf-8', 'replace')[:400]
+            except Exception:
+                pass
+            print('ERR', self.path, 'HTTP', e.code, detail, flush=True)
+            self._send(502, json.dumps({'error': 'upstream', 'code': e.code,
+                                        'detail': detail}).encode())
         except Exception as e:
-            print('ERR', self.path, e, flush=True); self._send(502, b'{"error":"upstream"}')
+            print('ERR', self.path, repr(e)[:300], flush=True)
+            self._send(502, json.dumps({'error': 'upstream',
+                                        'detail': repr(e)[:300]}).encode())
 
     def do_GET(self): self._fwd()
     def do_POST(self):
