@@ -23,7 +23,7 @@ MARK = '<!-- WIN_RULES:start -->'
 END = '<!-- WIN_RULES:end -->'
 
 # 只挑真正影響行為的章節，不要整份 42K 塞進 system prompt
-WANT = ['一律用繁體中文', '使用者中途說話', '先在快的地方驗證', '省 context']
+WANT = ['說「完成」之前先問自己', '一律用繁體中文', '使用者中途說話', '先在快的地方驗證', '省 context']
 
 
 def main():
