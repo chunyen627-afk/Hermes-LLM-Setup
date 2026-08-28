@@ -189,6 +189,7 @@ session 會把 provider 凍結在 `state.db`，要開新對話。見「踩過的
 | `client/` | 用戶端要複製過去的檔案（含 `SETUP-HERMES.ps1` 一鍵設定）|
 | `docs/` | 能力評估、詳細設定、VRAM 估算、效能調校、推測解碼、推理強度、長時間任務、踩過的坑 |
 | `memory/` | Claude 的長期記憶（實測數據、教訓） |
+| `skills/` | 自己寫的 Hermes skill 備份（重灌後要還原）|
 
 ---
 
@@ -246,6 +247,23 @@ model:
 - 不同架構的 KV cache 成本差很多 → 用 [docs/VRAM估算.md](docs/VRAM估算.md) 重算 ctx
 - 新模型若 chat template 沒問題，可拿掉 `--chat-template-file`
 - MTP 是 Qwen3.8 特有，其他模型要移除 `--spec-type draft-mtp`
+
+---
+
+## 重灌後還原
+
+Hermes 的 skill 存在 `%LOCALAPPDATA%\hermes\skills\`，不在這個倉庫裡自動同步，
+**重灌會全部消失**。裝好 Hermes 之後跑：
+
+```powershell
+cd <這個倉庫>\skills
+.\_sync.ps1 -Restore
+```
+
+然後重開 Hermes 才會載入。記憶（`memory/`）也是一樣要手動複製回
+`~\.claude\projects\<專案>\memory\`。
+
+平常改過 skill 就跑 `.\_sync.ps1` 備份回來。
 
 ---
 
