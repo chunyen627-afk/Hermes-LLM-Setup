@@ -6,7 +6,11 @@ cd /d "%~dp0"
 
 echo ============================================
 echo   Qwen3.8-27B GPU Server
-echo   Think mode: high  --  STM32 / hardware design / hard debugging
+echo   Think mode: high
+echo.
+echo   WARNING: measured low 2.5s vs high 80s per turn. One hardware
+echo   debug task took 740s on a single turn. Only use this for a
+echo   short, genuinely hard reasoning question - never a long task.
 echo ============================================
 echo.
 

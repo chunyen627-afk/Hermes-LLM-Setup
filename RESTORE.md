@@ -166,6 +166,31 @@ Serena 沒有自帶，都得自己裝進 PATH。
 
 ---
 
+## 步驟 6.8：規則（SOUL.md）
+
+Hermes 的行為規則放在 `%LOCALAPPDATA%\hermes\SOUL.md`。
+那份**不管在哪個專案都會載入**（程式碼註解：SOUL.md from HERMES_HOME is
+independent and always included when present），所以規則放這一份就好，
+不用每個專案放 `.hermes.md` 再各自維護。
+
+複製 `hermes-config/SOUL.md` 過去即可。
+
+規則的來源是 `remote-station/gui/app.py` 的 `WIN_RULES`，流程是：
+
+```
+改 WIN_RULES  ->  rules/_extract_rules.py  ->  rules/_deploy_rules.py
+                  （產出人看的完整版）        （寫進 SOUL.md）
+```
+
+`_deploy_rules.py` 用 `<!-- WIN_RULES:start -->` 標記，重跑會整段換掉不累積。
+
+⚠ **改了規則要重開 Hermes** —— SOUL.md 是啟動時載入的。
+
+Hermes 的規則載入優先序：`.hermes.md` > `AGENTS.md` > `CLAUDE.md`（都只看
+專案目錄，沒有 git root 時甚至不往上找），SOUL.md 則是獨立且永遠載入。
+
+---
+
 ## 步驟 7：還原 skill
 
 ```powershell
@@ -203,6 +228,27 @@ python app.py
 
 ⚠ `app.py` 裡的 `WIN_RULES` 是**給模型的行為規則**（怎麼省 context、
 什麼時候寫交接文件）。改了之後要跑 `_extract_rules.py` 同步到 CLAUDE.md。
+
+---
+
+## 推理強度：用 low，不要用 high
+
+`_ensure_38.ps1` 的 `-Think` 參數預設 `low`，**不要改成 high**：
+
+| | 每輪耗時 |
+|---|---|
+| `low` | **2.5 秒** |
+| `high` | **80 秒** |
+
+實測一個多輪硬體除錯任務，high 模式下**單輪 740 秒**（12 分鐘），
+而且那次產出的 30 個 token 全花在 thinking，`content` 是空的。
+長任務用 high 根本跑不完。
+
+韌體工作需要的是**低溫度**（`-Mode fw`，temp 0.3，暫存器名和數字不飄），
+不是深度思考。
+
+`1b-START-GPU-Server-THINK.bat` 是刻意保留的 high 模式，
+只適合「一個短的、真的很難的推理問題」，不要用在長任務。
 
 ---
 

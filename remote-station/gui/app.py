@@ -1100,7 +1100,7 @@ def _build_context_prefix(sid, max_chars=16000):
     return full
 
 
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyDGV31e7T5NWeCuXQ75_TpCHYR-kbZZYN4")
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
 VISION_PS1 = r"C:\Users\pjunm\OneDrive\Desktop\hermes\_ensure_vision_port_8002.ps1"
 
