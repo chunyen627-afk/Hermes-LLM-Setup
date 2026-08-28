@@ -1100,7 +1100,7 @@ def _build_context_prefix(sid, max_chars=16000):
     return full
 
 
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyDGV31e7T5NWeCuXQ75_TpCHYR-kbZZYN4")
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
 VISION_PS1 = r"C:\Users\pjunm\OneDrive\Desktop\hermes\_ensure_vision_port_8002.ps1"
 
@@ -1379,6 +1379,26 @@ def _run_claude_msg(sid, message, image_base64=None):
         "- 環境細節：路徑、指令、參數、版本號\n"
         "- 卡住的地方和目前的假設\n"
         "寫完繼續做，每有重大進展就更新。壓縮後或開新對話，第一件事讀這份。\n"
+        "\n"
+        "## 🔬 先在快的地方驗證，再上慢的地方（任何專案都適用）\n"
+        "\n"
+        "每個專案都有「快迴圈」和「慢迴圈」。**永遠先把能在快迴圈驗證的驗完**：\n"
+        "\n"
+        "| 專案類型 | 快迴圈（先做） | 慢迴圈（後做） |\n"
+        "|---|---|---|\n"
+        "| 韌體 / 嵌入式 | PC 上 gcc 編邏輯層跑（秒） | 建置+燒錄真機（分鐘） |\n"
+        "| 手機 App | 單元測試 / PC 模擬（秒） | 模擬器 / 實機（分鐘） |\n"
+        "| 前端 | 純函式測試（秒） | 瀏覽器互動（十秒） |\n"
+        "| 後端 | 單元測試（秒） | 起服務打 API（十秒） |\n"
+        "| 資料處理 | 小樣本（秒） | 全量跑（分鐘～小時） |\n"
+        "\n"
+        "**理由不是省時間，是縮小範圍**：快迴圈過了還出錯，\n"
+        "問題就一定在慢迴圈特有的東西（啟動流程、時序、周邊、真實資料）。\n"
+        "跳過快迴圈直接上慢的，出錯時所有可能性都還在，只能瞎猜。\n"
+        "\n"
+        "畫面類的專案，「看得到自己畫的東西」是關鍵：\n"
+        "把 framebuffer / canvas 存成圖檔 -> 自己用 vision 看 -> 自己發現問題。\n"
+        "不要改完就燒進去等別人回報。\n"
         "\n"
         "**其他省 context 的規矩**：\n"
         "- 編譯錯誤只留關鍵行：`gcc ... 2>&1 | grep -E \"error|warning\" | head -20`\n"
