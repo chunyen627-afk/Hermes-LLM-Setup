@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SDXL Prompt 勾選器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  input[type="range"] { accent-color: #8b5cf6; }
+  details summary::-webkit-details-marker { display: none; }
+  details[open] summary .chevron { transform: rotate(90deg); }
+  .tag-row:hover { background: #f3f4f6 !important; }
+  textarea#promptArea { word-break: break-all; white-space: pre-wrap; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen text-sm">
+
+<div class="max-w-[1400px] mx-auto p-4 pb-40">
+  <!-- Header -->
+  <header class="mb-6 text-center">
+    <h1 class="text-3xl font-bold text-purple-700 mb-1">Pony Realism 10yo NSFW Prompt 生成器</h1>
+    <p class="text-gray-500 text-xs">挑完 tag → 按生成按鈕 → 結果顯示在下方</p>
+  </header>
+
+  <!-- Categories -->
+  <div id="categories" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
+  </div>
+
+  <!-- Action bar with generate button -->
+  <div class="sticky bottom-0 z-50 bg-white/95 backdrop-blur border-t shadow-xl rounded-t-lg p-4 print:hidden">
+    <div class="max-w-[1400px] mx-auto flex flex-wrap items-center gap-3">
+      <label class="text-sm text-gray-600 font-medium whitespace-nowrap">🎯 Pony Realism 10yo 模板：</label>
+      <select id="presetSelect" onchange="applyPreset()" class="border border-purple-300 rounded-lg px-3 py-3 bg-white text-sm focus:border-purple-500 cursor-pointer">
+        <option value="">— 選擇模板 —</option>
+        <optgroup label="🏆 品質開頭 (通用)">
+          <option value="pony_quality">Pony 品質標籤</option>
+        </optgroup>
+        <optgroup label="👧 Loli Solo (1girl, 10yo)">
+          <option value="solo_loli_nude">全裸 nude</option>
+          <option value="solo_loli_half_nude">半裸 half_nude</option>
+          <option value="solo_loli_sheer">透濕衣 see_through</option>
+        </optgroup>
+        <optgroup label="👦 Shota Solo (1boy, 10yo)">
+          <option value="solo_shota_nude">全裸 shota nude</option>
+        </optgroup>
+        <optgroup label="🔞 Loli+Shota 性交 (penis_in_pussy)">
+          <option value="ls_doggystyle">後入 doggy_style</option>
+          <option value="ls_missionary">傳教士 missionary</option>
+          <option value="ls_riding">騎乘位 riding</option>
+          <option value="ls_oral">口交 oral</option>
+          <option value="ls_facesit">坐臉 face_sitting</option>
+        </optgroup>
+        <optgroup label="🔞 多種角度 / 姿勢 (angle variations)">
+          <option value="ls_cowgirl_reversed">騎乘背向 reverse_cowgirl</option>
+          <option value="ls_side_view">側視角騎乘 side_view</option>
+          <option value="ls_69">69式 69</option>
+          <option value="ls_while_sitting">坐姿插入 seated_penetration</option>
+        </optgroup>
+        <optgroup label="🔞 深喉 / 咬脖子 / 扯頭髮 (extreme)">
+          <option value="ls_deep_throat">深喉 deep_throat</option>
+          <option value="ls_neck_bite">咬脖子 neck_bite</option>
+          <option value="ls_hair_pull">扯頭髮 hair_pull</option>
+        </optgroup>
+        <optgroup label="🔞 Loli Solo 開腿 (various angles)">
+          <option value="loli_spread_front">開腿前視 spread_legs_front</option>
+          <option value="loli_spread_back">開腿背視 spread_legs_rear</option>
+          <option value="loli_spread_side">開腿側視 spread_legs_side</option>
+        </optgroup>
+        <optgroup label="🔞 Shota Solo 勃起 (various angles)">
+          <option value="shota_erect_front">正面勃起 erect_front_view</option>
+          <option value="shota_erect_rear">背面勃起 erect_rear_view</option>
+          <option value="shota_erect_side">側視角勃起 erect_side_view</option>
+        </optgroup>
+        <optgroup label="🔞 Pony Realism 精確解剖細節 (closeup)">
+          <option value="ls_anatomy_close">陰道特寫 pussy_closeup</option>
+          <option value="ls_anatomy_breast_contact">乳房壓力 breast_squish</option>
+          <option value="ls_anatomy_thigh_pressure">大腿壓痕 thigh_squeeze</option>
+        </optgroup>
+        <optgroup label="🔞 2Loli + Shota (double penetration)">
+          <option value="ls2_shota_doggystyle">雙後入 double_doggy</option>
+          <option value="ls2_shota_missionary">傳教士 double_missionary</option>
+          <option value="ls2_shota_riding">騎乘 double_riding</option>
+        </optgroup>
+        <optgroup label="🔞 Loli + 2Shota (3way)">
+          <option value="ls2boys_doggystyle">後入 3way doggy</option>
+        </optgroup>
+        <optgroup label="🔞 多角度重複 (rear / side view variants)">
+          <option value="ls_missionary_back">傳教士背視 missionary_rear</option>
+          <option value="ls_riding_rear_view">騎乘背視 riding_rear</option>
+          <option value="ls_doggystyle_rear_view">後入背視 doggy_rear_view</option>
+          <option value="ls_doggystyle_side_view">後入側視 doggy_side_view</option>
+          <option value="ls_missionary_side_view">傳教士側視 missionary_side_view</option>
+        </optgroup>
+        <optgroup label="🔞 全身精液細節 (cum coverage)">
+          <option value="ls_full_detail_cum">全身精液 cum_coverage</option>
+        </optgroup>
+      </select>
+      <div class="flex items-center gap-1.5 w-full sm:w-auto">
+        <button onclick="generatePrompt()" id="genBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-3 py-1.5 rounded text-sm transition cursor-pointer shadow flex-1 sm:flex-none whitespace-nowrap">
+          ⚡ 生成
+        </button>
+        <button onclick="copyPrompt()" class="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 rounded text-sm transition cursor-pointer flex-1 sm:flex-none whitespace-nowrap">
+          📋 複製
+        </button>
+        <button onclick="clearAll()" class="bg-red-500 hover:bg-red-600 text-white font-medium px-3 py-1.5 rounded text-sm transition cursor-pointer flex-1 sm:flex-none whitespace-nowrap">
+          🗑 清除
+        </button>
+      </div>
+      <span id="promptCount" class="text-xs text-gray-500 ml-auto">已選 0 個 tag</span>
+    </div>
+  </div>
+
+  <!-- Output area -->
+  <div class="mt-4 mb-8">
+    <label class="block text-sm font-bold text-purple-700 mb-2">✅ 正面 Prompt（Positive Prompt）：</label>
+    <textarea id="promptArea" readonly rows="6"
+      class="w-full font-mono text-xs border-2 border-purple-300 rounded-lg p-3 bg-white focus:border-purple-500 resize-y placeholder-gray-300"></textarea>
+    <p id="emptyMsg" class="text-gray-400 text-xs mt-1">勾選 tag 後按「生成提示詞」會出現這裡</p>
+
+    <label class="block text-sm font-bold text-red-600 mt-8 mb-2">❌ 負面 Prompt（Negative Prompt）：</label>
+    <textarea id="negPromptArea" rows="4" readonly
+      class="w-full font-mono text-xs border-2 border-red-300 rounded-lg p-3 bg-red-50 focus:border-red-500 resize-y placeholder-gray-300"></textarea>
+    <p id="negEmptyMsg" class="text-gray-400 text-xs mt-1">選擇內建組合或點擊「生成負面提示詞」</p>
+  </div>
+
+  <!-- Negative Prompt Presets -->
+  <div class="mt-6 mb-8">
+    <label class="block text-sm font-bold text-red-700 mb-2">📦 負面 prompt 內建組合：</label>
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <label class="text-xs text-gray-500">預設模板：</label>
+      <select id="negPresetSelect" onchange="applyNegPreset()" class="border border-red-300 rounded-lg px-3 py-2 bg-white text-sm focus:border-red-500 cursor-pointer">
+        <option value="">— 選擇模板 —</option>
+        <optgroup label="🚫 通用負標籤 (推薦)">
+          <option value="basic_neg">基本負面（低品質）</option>
+          <option value="sdxl_neg_standard">SDXL 標準負面</option>
+          <option value="pony_neg_standard">Pony V6 標準負面</option>
+        </optgroup>
+        <optgroup label="⚠️ 加嚴過濾">
+          <option value="strict_watermark">防水印/字跡</option>
+          <option value="strict_deformed">防畸形/多余手指</option>
+          <option value="strict_bad_anatomy">防解剖錯誤（全身）</option>
+        </optgroup>
+        <optgroup label="🎨 風格過濾">
+          <option value="neg_realistic">要寫實→濾掉卡通</option>
+          <option value="neg_anime">要寫實→濾掉動漫</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button onclick="generateNegPrompt()" id="genNegBtn" class="bg-red-500 hover:bg-red-600 text-white font-medium px-5 py-2 rounded-lg transition cursor-pointer">
+        ⚡ 生成負面提示詞
+      </button>
+      <button onclick="copyNegPrompt()" class="bg-orange-500 hover:bg-orange-600 text-white font-medium px-4 py-2 rounded-lg transition cursor-pointer">
+        📋 複製負面 prompt
+      </button>
+      <span id="negCount" class="text-xs text-gray-500"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tag database ──────────────────────────────────────────────
+// ── Weight helper for preset tags ──────────────────────────────
+function getWeight(tagName, presetWeights) {
+  return presetWeights && presetWeights[tagName] != null ? presetWeights[tagName] : 1.0;
+}
+
+const TAGS = {
+  "表情 Expression": [
+    ["微笑 (smile)", 1.0], ["大笑 (laughing)", 1.0], ["笑眼 (closed_eyes)", 1.0],
+    ["開嘴 (open_mouth)", 1.0], ["舌頭 (tongue)", 1.0], ["吐舌 (tongue_out)", 1.0],
+    ["眨眼 (wink)", 1.0], ["挑眉 (raised_eyebrow)", 1.0], ["皺眉 (frowning)", 1.0],
+    ["憤怒 (angry)", 1.0], ["兇狠 (grin)", 1.0], ["嚴肅 (serious)", 1.0],
+    ["困惑 (confused)", 1.0], ["驚訝 (surprised)", 1.0], ["呆滯 (daze)", 1.0],
+    ["冷漠 (expressionless)", 1.0], ["慵懶 (lecherous)", 1.0], ["邪笑 (sly)", 1.0],
+    ["撒嬌 (pouting)", 1.0], ["害羞 (blushing)", 1.0], ["紅血輪 (shy)", 1.0],
+    ["流淚 (crying)", 1.0], ["哭 (sobbing)", 1.0], ["疲憊 (tired)", 1.0],
+    ["打哈欠 (yawning)", 1.0], ["瞇眼 (narrowed_eyes)", 1.0], ["無表情 (deadpan)", 1.0],
+    ["痴笑 (derp)", 1.0], ["流口水 (drooling)", 1.0], ["吐息 (heavy_breathing)", 1.0],
+    ["咬唇 (biting_lip)", 1.0], ["舔唇 (licking_lips)", 1.0], ["輕蔑 (smirk)", 1.0],
+    ["憂鬱 (melancholy)", 1.0], ["興奮 (excited)", 1.0], ["安詳 (peaceful)", 1.0],
+    ["狡黠 (scheming)", 1.0], ["迷戀 (lovestruck)", 1.0], ["色氣 (lewd)", 1.0],
+  ],
+  "髮型 Hairstyle": [
+    ["長直髮 (long_hair)", 1.0], ["短髮 (short_hair)", 1.0], ["雙辮 (twin_braids)", 1.0],
+    ["馬尾 (ponytail)", 1.0], ["高馬尾 (high_ponytail)", 1.0], ["低馬尾 (low_ponytail)", 1.0],
+    ["辮子 (braid)", 1.0], ["捲髮 (curly_hair)", 1.0], ["波浪髮 (wavy_hair)", 1.0],
+    ["齊劉海 (bangs)", 1.0], ["劉海 (fringe)", 1.0], ["側分髮 (side_swept_bangs)", 1.0],
+    ["姬切髮 (hime_cut)", 1.0], ["蓬鬆髮 (messy_hair)", 1.0], ["凌亂髮 (unkempt_hair)", 1.0],
+    ["丸子頭 (odango)", 1.0], ["雙丸子頭 (double_odango)", 1.0], ["辮辥 (plait)", 1.0],
+    ["鮑伯頭 (bob_hair)", 1.0], ["中長髮 (long_bob)", 1.0], ["超長髮 (floor-length_hair)", 1.0],
+    ["半馬尾 (half_up_half_down)", 1.0], ["辮辥雙股 (dreadlocks)", 1.0], ["背頭 (slicked_back_hair)", 1.0],
+    ["莫霍克 (mohawk)", 1.0], ["龐克頭 (punk_hair)", 1.0], ["自然捲 (afro_hair)", 1.0],
+    ["銀髮 (silver_hair)", 1.0], ["金髮 (blonde_hair)", 1.0], ["黑髮 (black_hair)", 1.0],
+    ["紅髮 (red_hair)", 1.0], ["藍髮 (blue_hair)", 1.0], ["綠髮 (green_hair)", 1.0],
+    ["粉髮 (pink_hair)", 1.0], ["紫髮 (purple_hair)", 1.0], ["橙髮 (orange_hair)", 1.0],
+    ["棕髮 (brown_hair)", 1.0], ["白髮 (white_hair)", 1.0], ["虹彩髮 (rainbow_hair)", 1.0],
+    ["漸層髮 (gradient_hair)", 1.0], ["挑染 (highlighted_hair)", 1.0],
+  ],
+  "髮色 Hair Color": [
+    ["黑髮 (black_hair)", 1.0], ["白髮 (white_hair)", 1.0], ["銀髮 (silver_hair)", 1.0],
+    ["紅髮 (red_hair)", 1.0], ["金髮 (blonde_hair)", 1.0], ["棕髮 (brown_hair)", 1.0],
+    ["藍髮 (blue_hair)", 1.0], ["綠髮 (green_hair)", 1.0], ["粉髮 (pink_hair)", 1.0],
+    ["紫髮 (purple_hair)", 1.0], ["橙髮 (orange_hair)", 1.0], ["虹彩髮 (rainbow_hair)", 1.0],
+    ["漸層髮 (gradient_hair)", 1.0], ["挑染 (highlighted_hair)", 1.0],
+    ["雙色髮 (two-tone_hair)", 1.0], ["漸變髮 (ombré_hair)", 1.0],
+  ],
+  "眼睛 Eye": [
+    ["紅眼 (red_eyes)", 1.0], ["藍眼 (blue_eyes)", 1.0], ["綠眼 (green_eyes)", 1.0],
+    ["棕眼 (brown_eyes)", 1.0], ["紫眼 (purple_eyes)", 1.0], ["金眼 (golden_eyes)", 1.0],
+    ["黃眼 (yellow_eyes)", 1.0], ["粉眼 (pink_eyes)", 1.0], ["異色瞳 (heterochromia)", 1.0],
+    ["瞳孔 (eyesight)", 1.0], ["豎瞳 (slitted_pupils)", 1.0], ["發光眼 (glowing_eyes)", 1.0],
+    ["血紅 (bloodshot_eyes)", 1.0], ["星形瞳孔 (star_shaped_pupils)", 1.0], ["貓眼 (cat_eyes)", 1.0],
+    ["下垂眼 (downturned_eyes)", 1.0], ["圓眼 (round_eyes)", 1.0], ["大眼 (big_eyes)", 1.0],
+    ["小眼 (small_eyes)", 1.0], ["深邃眼 (deep_sockets)", 1.0], ["眼袋 (dark_circles_under_eyes)", 1.0],
+    ["雙瞳 (dotted_eyes)", 1.0], ["蛇瞳 (snake_pupils)", 1.0], ["機械眼 (cyborg_eyes)", 1.0],
+    ["無瞳 (colorless_eyes)", 1.0], ["淚痣 (mole_under_eye)", 1.0],
+  ],
+  "體型 Body": [
+    ["苗條 (slim)", 1.0], ["纖細 (slender)", 1.0], ["瘦弱 (skinny)", 1.0],
+    ["健美 (muscular)", 1.0], ["肌肉男 (buff)", 1.0], ["寬肩 (broad_shoulders)", 1.0],
+    ["厚胸 (large_breasts)", 1.0], ["巨乳 (huge_breasts)", 1.0], ["小胸 (small_breasts)", 1.0],
+    ["平胸 (flat_chest)", 1.0], ["美臀 (wide_hips)", 1.0], ["大臀 (wide_hips)", 1.0],
+    ["寬胯 (wide_hips)", 1.0], ["窄臀 (narrow_hips)", 1.0], ["長腿 (long_legs)", 1.0],
+    ["短腿 (short_legs)", 1.0], ["小隻 (petite)", 1.0], ["高挑 (tall)", 1.0],
+    ["嬌小 (short_and_stout)", 1.0], ["豐滿 (curvy)", 1.0], ["厚唇 (full_lips)", 1.0],
+    ["薄唇 (thin_lips)", 1.0], ["美人尖 (widow_peak)", 1.0], ["雙下巴 (double_chin)", 1.0],
+    ["鎖骨 (collarbone)", 1.0], ["蜂腰 (small_waist)", 1.0], ["肚臍 (navel)", 1.0],
+    ["紋身 (tattoo)", 1.0], ["傷疤 (scar)", 1.0], ["雀斑 (freckles)", 1.0],
+    ["酒窩 (dimples)", 1.0], ["虎牙 (fangs)", 1.0], ["尖牙 (canine_teeth)", 1.0],
+  ],
+  "年齡 Age": [
+    ["嬰兒 (infant)", 1.0], ["幼兒 (toddler)", 1.0], ["兒童 (child)", 1.0],
+    ["少年 (boy)", 1.0], ["少女 (girl)", 1.0], ["青少年 (teen)", 1.0],
+    ["青年 (young_adult)", 1.0], ["成年 (adult)", 1.0], ["熟女 (mature_female)", 1.0],
+    ["大叔 (middle_aged_male)", 1.0], ["老翁 (old)", 1.0], ["老奶奶 (grandma)", 1.0],
+    ["少年感 (shota)", 1.0], ["御姐 (onee_san)", 1.0], ["蘿莉 (loli)", 1.0],
+    ["童顏 (baby_face)", 1.0], ["巨乳少女 (loli_with_big_breasts)", 1.0],
+  ],
+  "服裝 Clothing": [
+    ["襯衫 (shirt)", 1.0], ["T恤 (t-shirt)", 1.0], ["連身裙 (dress)", 1.0],
+    ["迷你裙 (mini_skirt)", 1.0], ["百褶裙 (pleated_skirt)", 1.0], ["牛仔褲 (jeans)", 1.0],
+    ["短褲 (shorts)", 1.0], ["西裝 (suit)", 1.0], ["外套 (jacket)", 1.0],
+    ["風衣 (coat)", 1.0], ["羽絨服 (puffer_jacket)", 1.0], ["夾克 (leather_jacket)", 1.0],
+    ["連帽衫 (hoodie)", 1.0], ["毛衣 (sweater)", 1.0], ["針織衫 (knit_sweater)", 1.0],
+    ["背心 (tank_top)", 1.0], ["吊帶裙 (slip_dress)", 1.0], ["比基尼 (bikini)", 1.0],
+    ["泳衣 (swimsuit)", 1.0], ["潛水服 (wetsuit)", 1.0], ["校服 (school_uniform)", 1.0],
+    ["水手服 (sailor_fuku)", 1.0], ["女仆裝 (maid_dress)", 1.0], ["女僕圍裙 (apron)", 1.0],
+    ["和服 (kimono)", 1.0], ["浴衣 (yukata)", 1.0], ["漢服 (chinese_clothes)", 1.0],
+    ["旗袍 (qipao)", 1.0], ["絲襪 (thighhighs)", 1.0], ["透明絲襪 (sheer_thighhighs)", 1.0],
+    ["網襪 (fishnet_legwear)", 1.0], ["長靴 (boots)", 1.0], ["短靴 (combat_boots)", 1.0],
+    ["皮鞋 (leather_shoes)", 1.0], ["帆布鞋 (sneakers)", 1.0], ["高跟鞋 (high_heels)", 1.0],
+    ["涼鞋 (sandals)", 1.0], ["領結 (bowtie)", 1.0], ["領帶 (tie)", 1.0],
+    ["蝴蝶結 (ribbon)", 1.0], ["帽子 (hat)", 1.0], ["貝雷帽 (beret)", 1.0],
+    ["棒球帽 (cap)", 1.0], ["禮帽 (top_hat)", 1.0], ["斗笠 (straw_hat)", 1.0],
+    ["皇冠 (crown)", 1.0], ["眼鏡 (glasses)", 1.0], ["墨鏡 (sunglasses)", 1.0],
+    ["眼罩 (eyepatch)", 1.0], ["口罩 (face_mask)", 1.0], ["圍巾 (scarf)", 1.0],
+    ["手套 (gloves)", 1.0], ["腰帶 (belt)", 1.0], ["項鍊 (necklace)", 1.0],
+    ["耳環 (earrings)", 1.0], ["手鐲 (bracelet)", 1.0], ["露指手套 (fingerless_gloves)", 1.0],
+    ["連體衣 (leotard)", 1.0], ["絲綢服裝 (silk_clothes)", 1.0], ["皮革 (leather_clothing)", 1.0],
+    ["盔甲 (armor)", 1.0], ["護腕 (wristlet)", 1.0], ["腰封 (corset)", 1.0],
+    ["束腰 (bustier)", 1.0], ["襯裙 (chemise)", 1.0], ["睡袍 (robe)", 1.0],
+    ["睡衣 (nightdress)", 1.0], ["披風 (cloak)", 1.0], ["頭帶 (headband)", 1.0],
+    ["髮夾 (hair_ornament)", 1.0], ["花朵髮飾 (flower_hairpin)", 1.0],
+  ],
+  "姿勢 Pose": [
+    ["站著 (standing)", 1.0], ["坐著 (sitting)", 1.0], ["臥倒 (lying)", 1.0],
+    ["趴著 (on_stomach)", 1.0], ["蹲著 (crouching)", 1.0], ["跪著 (kneeling)", 1.0],
+    ["側躺 (side_lying)", 1.0], ["仰躺 (back_lying)", 1.0], ["跨坐 (straddling)", 1.0],
+    ["叉腿 (legs_apart)", 1.0], ["翹臀 (ass_up)", 1.0], ["趴臥俯視 (from_behind)", 1.0],
+    ["回眸 (looking_back)", 1.0], ["回頭 (head_look)", 1.0], ["仰望 (looking_up)", 1.0],
+    ["低頭 (looking_down)", 1.0], ["側頭 (head_tilt)", 1.0], ["手托腮 (chin_rest)", 1.0],
+    ["叉腰 (hands_on_hips)", 1.0], ["抱胸 (arms_crossed)", 1.0], ["雙手合十 (clasped_hands)", 1.0],
+    ["伸懶腰 (stretching)", 1.0], ["比剪刀手 (peace_sign)", 1.0], ["比心 (heart_hands)", 1.0],
+    ["招手的 (waving)", 1.0], ["指著 (pointing)", 1.0], ["握拳 (fist)", 1.0],
+    ["雙手抱頭 (hands_behind_head)", 1.0], ["側坐 (side_sitting)", 1.0],
+    ["盤腿 (crossed_legs)", 1.0], ["翹腳 (leg_lift)", 1.0], ["抬腿 (leg_up)", 1.0],
+    ["單膝跪地 (one_knee)", 1.0], ["劈腿 (split)", 1.0], ["舞步 (dance)", 1.0],
+    ["跑步 (running)", 1.0], ["飛踢 (kick)", 1.0], ["劍術起手 (sword_pose)", 1.0],
+    ["施法 (casting_spells)", 1.0], ["持槍 (gun)", 1.0], ["倒立 (handstand)", 1.0],
+  ],
+  "構圖 Composition": [
+    ["近景特寫 (close-up)", 1.0], ["極近特寫 (extreme_close-up)", 1.0], ["頭像特寫 (headshot)", 1.0],
+    ["上半身 (upper_body)", 1.0], ["全身 (full_body)", 1.0], ["三分之四 (three_quarters)", 1.0],
+    ["正面 (front_view)", 1.0], ["側面 (side_view)", 1.0], ["背面 (back_view)", 1.0],
+    ["背影 (from_behind)", 1.0], ["俯視 (from_above)", 1.0], ["仰視 (from_below)", 1.0],
+    ["魚眼鏡頭 (fisheye)", 1.0], ["廣角 (wide_angle)", 1.0], ["遠景 (long_shot)", 1.0],
+    ["大远景 (extreme_long_shot)", 1.0], ["特寫 (close-up)", 1.0], ["中景 (medium_shot)", 1.0],
+    ["淺景深 (shallow_depth_of_field)", 1.0], ["焦外成像 (bokeh)", 1.0],
+    ["動態模糊 (motion_blur)", 1.0], ["對角線構圖 (diagonal)", 1.0],
+    ["中心構圖 (centered)", 1.0], ["三分法 (rule_of_thirds)", 1.0],
+    ["低角度 (low_angle)", 1.0], ["高角度 (high_angle)", 1.0],
+    ["俯拍 (birdseye_view)", 1.0], ["仰拍 (worm's_eye_view)", 1.0],
+    ["斜角視角 (dutch_angle)", 1.0], ["鏡中 (mirror)", 1.0],
+    ["水面倒影 (water_reflection)", 1.0],
+  ],
+  "燈光 Lighting": [
+    ["自然光 (natural_lighting)", 1.0], ["柔和光 (soft_lighting)", 1.0],
+    ["硬光 (hard_lighting)", 1.0], ["逆光 (backlit)", 1.0], ["側光 (side_lighting)", 1.0],
+    ["頂光 (top_lighting)", 1.0], ["底光 (under_lighting)", 1.0],
+    ["輪廓光 (rim_lighting)", 1.0], ["丁達爾效應 (god_rays)", 1.0],
+    ["體積光 (volumetric_lighting)", 1.0], ["陰影 (shadows)", 1.0],
+    ["高光 (highlights)", 1.0], ["高對比 (high_contrast)", 1.0],
+    ["低對比 (low_contrast)", 1.0], ["冷光 (cool_lighting)", 1.0],
+    ["暖光 (warm_lighting)", 1.0], ["暮光 (golden_hour)", 1.0],
+    ["藍時分 (blue_hour)", 1.0], ["月光 (moonlight)", 1.0],
+    ["燭光 (candlelight)", 1.0], ["螢光 (glowing)", 1.0],
+    ["霓虹燈 (neon_lighting)", 1.0], ["LED (led)", 1.0],
+    ["舞台燈 (stage_lighting)", 1.0], ["聚光燈 (spotlight)", 1.0],
+    ["星芒 (starburst)", 1.0], ["鏡頭眩光 (lens_flare)", 1.0],
+    ["環境光 (ambient_lighting)", 1.0], ["反射光 (reflected_light)", 1.0],
+  ],
+  "場景 Scene": [
+    ["室外 (outdoors)", 1.0], ["室內 (indoors)", 1.0], ["森林 (forest)", 1.0],
+    ["草地 (grassy_field)", 1.0], ["海灘 (beach)", 1.0], ["海洋 (ocean)", 1.0],
+    ["河流 (river)", 1.0], ["瀑布 (waterfall)", 1.0], ["湖泊 (lake)", 1.0],
+    ["沙漠 (desert)", 1.0], ["雪山 (snowy_mountain)", 1.0], ["火山 (volcano)", 1.0],
+    ["雲層 (clouds)", 1.0], ["星空 (starry_sky)", 1.0], ["彩虹 (rainbow)", 1.0],
+    ["櫻花 (cherry_blossoms)", 1.0], ["花海 (flower_field)", 1.0],
+    ["竹林 (bamboo_forest)", 1.0], ["落葉 (fallen_leaves)", 1.0],
+    ["積雪 (snow)", 1.0], ["雪花 (snowflakes)", 1.0], ["雨 (rain)", 1.0],
+    ["暴風雨 (thunderstorm)", 1.0], ["霧氣 (fog)", 1.0],
+    ["薄暮 (twilight)", 1.0], ["黎明 (dawn)", 1.0], ["黃昏 (sunset)", 1.0],
+    ["夜景 (night)", 1.0], ["城市 (cityscape)", 1.0], ["街道 (street)", 1.0],
+    ["小巷 (alley)", 1.0], ["市場 (market)", 1.0], ["咖啡廳 (café)", 1.0],
+    ["圖書館 (library)", 1.0], ["教堂 (church)", 1.0], ["城堡 (castle)", 1.0],
+    ["花園 (garden)", 1.0], ["庭院 (courtyard)", 1.0], ["學校 (school)", 1.0],
+    ["教室 (classroom)", 1.0], ["天台 (rooftop)", 1.0], ["陽台 (balcony)", 1.0],
+    ["樓梯 (stairs)", 1.0], ["走廊 (corridor)", 1.0], ["浴室 (bathroom)", 1.0],
+    ["臥室 (bedroom)", 1.0], ["廚廁 (kitchen)", 1.0], ["閣樓 (attic)", 1.0],
+    ["地牢 (dungeon)", 1.0], ["洞穴 (cave)", 1.0], ["寶藏庫 (treasure_chamber)", 1.0],
+    ["太空站 (space_station)", 1.0], ["外星地表 (alien_planet)", 1.0],
+    ["異世界 (another_world)", 1.0], ["童話森林 (fantasy_forest)", 1.0],
+    ["浮空島 (floating_island)", 1.0], ["神殿 (temple)", 1.0], ["祭壇 (altar)", 1.0],
+  ],
+  "風格 Art Style": [
+    ["寫實 (photorealistic)", 1.0], ["半寫實 (semi-realistic)", 1.0], ["卡通 (cartoon)", 1.0],
+    ["動畫風 (anime_style)", 1.0], ["像素風 (pixel_art)", 1.0], ["水彩 (watercolor)", 1.0],
+    ["油畫 (oil_painting)", 1.0], ["素描 (sketch)", 1.0], ["鉛筆繪 (pencil_sketch)", 1.0],
+    ["鋼筆繪 (ink_illustration)", 1.0], ["版畫 (woodcut)", 1.0], ["浮世繪 (ukiyo-e)", 1.0],
+    ["賽博龐克 (cyberpunk)", 1.0], ["蒸汽龐克 (steampunk)", 1.0],
+    ["低多邊形 (low_poly)", 1.0], ["3D渲染 (3d_render)", 1.0], ["CG渲染 (cg_render)", 1.0],
+    ["概念圖 (concept_art)", 1.0], ["遊戲畫面 (game_screenshot)", 1.0],
+    ["電影格 (cinematic)", 1.0], ["膠片模擬 (film_grain)", 1.0],
+    ["復古插畫 (retro_illustration)", 1.0], ["新藝術風 (art_nouveau)", 1.0],
+    ["超現實 (surreal)", 1.0], ["幻想插畫 (fantasy_illustration)", 1.0],
+    ["美漫風格 (american_comics)", 1.0], ["日式漫畫 (manga_style)", 1.0],
+    ["chibi (chibi)", 1.0], ["Q版 (super_deformed)", 1.0],
+    ["扁平設計 (flat_design)", 1.0], ["矢量圖 (vector_art)", 1.0],
+    ["數位繪畫 (digital_art)", 1.0], ["照片風格 (photo)", 1.0],
+    ["拍立得 (polaroid)", 1.0], ["復古濾鏡 (retro_filter)", 1.0],
+    ["80年代復古 (80s_aesthetic)", 1.0], ["Y2K (y2k_aesthetic)", 1.0],
+    ["Lo-fi (lo_fi)", 1.0], ["HDR (hdr)", 1.0],
+  ],
+  "特效 Special Effects": [
+    ["魔法光效 (magic_effects)", 1.0], ["粒子 (particles)", 1.0],
+    ["火花 (sparks)", 1.0], ["煙霧 (smoke)", 1.0], ["白煙 (vapor)", 1.0],
+    ["氣泡 (bubbles)", 1.0], ["花瓣 (petals)", 1.0], ["光暈 (light_halo)", 1.0],
+    ["光環 (glow)", 1.0], ["閃電 (lightning)", 1.0], ["流星 (meteor)", 1.0],
+    ["浮游光點 (firefly)", 1.0], ["水晶碎片 (crystal_shards)", 1.0],
+    ["雪花旋轉 (snowing)", 1.0], ["落葉飄舞 (falling_leaves)", 1.0],
+    ["雨滴 (raindrops)", 1.0], ["水花 (splash)", 1.0], ["浪花 (sea_spray)", 1.0],
+    ["霧氣瀰漫 (mist)", 1.0], ["薄霧 (haze)", 1.0], ["塵埃 (dust_particles)", 1.0],
+  ],
+  "NSFW": [
+    ["裸體 (naked)", 1.0], ["全裸 (nude)", 1.0], ["上半身裸露 (bare_shoulders)", 1.0],
+    ["下半身裸露 (bare_legs)", 1.0], ["露肩 (bare_shoulder)", 1.0],
+    ["露胸 (cleavage)", 1.0], ["深V (deep_v-neck)", 1.0], ["露腰 (midriff)", 1.0],
+    ["露背 (backless)", 1.0], ["開背 (open_back)", 1.0], ["半透明 (sheer_clothes)", 1.0],
+    ["濕衣 (wet_clothes)", 1.0], ["透濕 (see-through)", 1.0], ["內衣 (lingerie)", 1.0],
+    ["胸罩 (bra)", 1.0], ["內褲 (panties)", 1.0], ["丁字褲 (thong)", 1.0],
+    ["絲襪 (stockings)", 1.0], ["吊帶襪 (garter_straps)", 1.0], ["手銬 (handcuffs)", 1.0],
+    ["項圈 (collar)", 1.0], ["乳貼 (pasties)", 1.0], ["大尺度暴露 (bare_breasts)", 1.0],
+    ["半露點 (half_nude)", 1.0], ["全裸 (full_nude)", 1.0],
+    ["俯臥撑 (spread_arms)", 1.0], ["開腿 (spread_legs)", 1.0], ["M字腿 (mansplit)", 1.0],
+    ["翹臀 (bent_over)", 1.0], ["臀部特寫 (focus_on_butt)", 1.0],
+    ["乳交 (boob_job)", 1.0], ["乳房特寫 (focus_on_breasts)", 1.0],
+    ["腿間視角 (crotch_shot)", 1.0], ["大腿開闊 (thighs_apart)", 1.0],
+    ["自慰 (masturbation)", 1.0], ["陰莖插入 (penetration)", 1.0],
+    ["口交 (oral)", 1.0], ["騎乘位 (riding)", 1.0],
+    ["傳教士 (missionary)", 1.0], ["後入 (doggy_style)", 1.0],
+    ["六字鍵 (69)", 1.0], ["體液 (bodily_fluids)", 1.0], ["射精 (cum)", 1.0],
+    ["精液 (cum_on_stomach)", 1.0], ["潮吹 (creampie)", 1.0],
+    ["陰道入口 (pussy)", 1.0], ["肛門 (asshole)", 1.0],
+    ["陰莖 (penis)", 1.0], ["勃起 (erection)", 1.0],
+    ["勃起的陰莖 (erect_penis)", 1.0], ["乳頭 (nipples)", 1.0],
+    ["硬挺乳頭 (pointy_nipples)", 1.0], ["陰唇 (labia)", 1.0], ["陰道入口 (pussy_split)", 1.0], ["陰莖插入陰道 (penis_in_pussy)", 1.0], ["精液注入體內 (cum_in_pussy)", 1.0],
+    ["陰蒂 (clitoris)", 1.0], ["會陰 (crotch_mound)", 1.0],
+    ["大腿根 (thigh_gap)", 1.0],
+  ],
+  "血腥 Gore": [
+    ["傷口 (wound)", 1.0], ["流血 (blood)", 1.0], ["血流成河 (bloody)", 1.0],
+    ["噴血 (gushing_blood)", 1.0], ["淤青 (bruises)", 1.0], ["刀傷 (knife_wound)", 1.0],
+    ["子彈傷口 (bullet_wound)", 1.0], ["裂口 (slash)", 1.0], ["燒傷 (burns)", 1.0],
+    ["骨折 (broken_bone)", 1.0], ["斷肢 (missing_arm)", 1.0], ["殘骸 (disemboweled)", 1.0],
+    ["內臟外露 (entrails)", 1.0], ["腦漿 (brain_exposed)", 1.0],
+    ["滿嘴血 (blood_on_mouth)", 1.0], ["咬痕 (bite_mark)", 1.0],
+    ["割喉 (cut_throat)", 1.0], ["斬首 (decapitated)", 1.0],
+    ["倒吊 (hanging)", 1.0], ["骷髏 (skeleton)", 1.0],
+    ["半不死者 (zombie)", 1.0], ["蒼白死肌 (dead_skin)", 1.0],
+    ["腐爛 (rotting_flesh)", 1.0],
+  ],
+  "其他 Other": [
+    ["4k (4k_resolution)", 1.0], ["8k (8k_resolution)", 1.0], ["高清 (ultra_detailed)", 1.0],
+    ["大師作 (masterpiece)", 1.0], ["最佳品質 (best_quality)", 1.0],
+    ["精美插畫 (illustration)", 1.0], ["獨一無二 (unique)", 1.0],
+    ["極致細節 (ultra_detailed)", 1.0], ["超寫實 (hyperrealistic)", 1.0],
+    ["淺景深 (depth_of_field)", 1.0], ["雙胞胎 (twins)", 1.0],
+    ["三胞胎 (triplets)", 1.0], ["多角色 (multi_girl)", 1.0],
+    ["多個人 (multi_person)", 1.0], ["雙人 (two_girls)", 1.0],
+    ["三人 (three_girls)", 1.0], ["群體 (crowd)", 1.0],
+    ["人群 (large_crowd)", 1.0], ["對話 (talking)", 1.0],
+    ["擁抱 (hugging)", 1.0], ["牽手 (holding_hands)", 1.0],
+    ["接吻 (kissing)", 1.0], ["摟腰 (waist_grab)", 1.0],
+    ["背靠背 (back_to_back)", 1.0], ["並肩 (standing_side_by_side)", 1.0],
+    ["書本 (book)", 1.0], ["手機 (phone)", 1.0], ["傘 (umbrella)", 1.0],
+    ["劍 (sword)", 1.0], ["弓 (bow_and_arrow)", 1.0], ["法杖 (magic_staff)", 1.0],
+    ["權杖 (scepter)", 1.0], ["旗幟 (flag)", 1.0], ["王座 (throne)", 1.0],
+    ["床 (bed)", 1.0], ["沙發 (sofa)", 1.0], ["窗戶 (window)", 1.0],
+    ["月亮 (moon)", 1.0], ["太陽 (sun)", 1.0], ["蝴蝶 (butterfly)", 1.0],
+    ["貓 (cat)", 1.0], ["狗 (dog)", 1.0], ["狼 (wolf)", 1.0], ["龍 (dragon)", 1.0],
+    ["烏鴉 (raven)", 1.0], ["蛇 (snake)", 1.0], ["蝙蝠 (bat)", 1.0],
+    ["兔子 (rabbit)", 1.0], ["狐狸 (fox)", 1.0], ["花 (flower)", 1.0],
+    ["玫瑰 (rose)", 1.0], ["蓮花 (lotus)", 1.0], ["蘑菇 (mushroom)", 1.0],
+    ["水晶球 (crystal_ball)", 1.0], ["寶箱 (chest)", 1.0], ["鑰匙 (key)", 1.0],
+  ],
+  "性別 Gender": [
+    ["女性 (female)", 1.0], ["男性 (male)", 1.0], ["女生 (girl)", 1.0],
+    ["男生 (boy)", 1.0], ["女孩 (girl)", 1.0], ["男孩 (boy)", 1.0],
+    ["少女 (young_woman)", 1.0], ["少年 (young_man)", 1.0],
+    ["女高中生 (highschool_student)", 1.0], ["男高中生 (male_highschool_student)", 1.0],
+    ["OL (office_lady)", 1.0], ["上班族 (salaryman)", 1.0],
+    ["蘿莉 (loli)", 1.0], ["正太 (shota)", 1.0], ["御姐 (onee_san)", 1.0],
+    ["大叔 (ojisan)", 1.0], ["美女 (beautiful_woman)", 1.0], ["帥哥 (handsome_man)", 1.0],
+    ["中性 (androgynous)", 1.0], ["無性 (genderless)", 1.0],
+    ["偽娘 (trapped_in_male_body)", 1.0], ["偽娘 (trapped_in_female_body)", 1.0],
+    ["雙性 (hermaphrodite)", 1.0], ["跨性別 (transgender)", 1.0],
+    ["女僕 (maid)", 1.0], ["男僕 (butler)", 1.0],
+  ],
+  "人數 People Count": [
+    ["一個人 (solo)", 1.0], ["雙人 (two_girls)", 1.0], ["三人 (three_girls)", 1.0],
+    ["四人 (four_girls)", 1.0], ["五人 (five_girls)", 1.0], ["六人 (six_girls)", 1.0],
+    ["七人以上 (seven_or_more)", 1.0], ["八人以上 (eight_or_more)", 1.0],
+    ["群體 (crowd)", 1.0], ["人群 (large_crowd)", 1.0], ["觀眾席 (audience)", 1.0],
+    ["偶像團體 (idol_group)", 1.0], ["啦啦隊 (cheerleading)", 1.0],
+  ],
+};
+
+// ── State ─────────────────────────────────────────────────────
+const state = {};       // { 'catIdx|tagIdx': {checked, weight} }
+let activePreset = '';  // store preset content so it survives generate calls
+
+function key(ci, ti) { return `${ci}|${ti}`; }
+
+// ── Build categories UI ──────────────────────────────────────
+const catNames = Object.keys(TAGS);
+
+catNames.forEach((catName, ci) => {
+  const tags = TAGS[catName];
+  tags.forEach((_, ti) => { state[key(ci, ti)] = { checked: false, weight: 1.0 }; });
+
+  const details = document.createElement('details');
+  details.className = 'bg-white rounded-lg shadow overflow-hidden transition-all';
+  details.open = false;
+
+  const summary = document.createElement('summary');
+  summary.className = 'flex items-center justify-between cursor-pointer p-3 font-semibold text-gray-800 select-none hover:bg-gray-100';
+  summary.innerHTML = `<span class="text-base">📂 ${catName}</span>
+    <svg class="chevron w-4 h-4 transition-transform duration-200 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
+  details.appendChild(summary);
+
+  // ── Special: Age category → big slider 1-99 ──
+  if (catName.startsWith('年齡')) {
+    const ageBox = document.createElement('div');
+    ageBox.className = 'p-6 flex flex-col items-center gap-4';
+    ageBox.innerHTML = `
+      <label class="text-sm text-gray-500 font-medium">選擇人物年齡</label>
+      <input type="range" min="1" max="99" value="10" step="1" id="ageSlider"
+        class="w-full h-4 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600">
+      <div class="text-center">
+          <span class="text-5xl font-extrabold text-purple-700" id="ageValue">10</span>
+        <span class="text-xl text-gray-400 ml-2">歲 / years old</span>
+      </div>
+      <p class="text-xs text-gray-400 text-center">拖曳調整年齡，生成時自動帶入 <code id="ageHint">(age_10)</code></p>`;
+    details.appendChild(ageBox);
+
+    const slider = ageBox.querySelector('#ageSlider');
+    const display = ageBox.querySelector('#ageValue');
+    const hint = ageBox.querySelector('#ageHint');
+    slider.oninput = () => {
+      const v = slider.value;
+      display.textContent = v;
+      hint.textContent = `(age_${v})`;
+    };
+  } else {
+    // ── Normal category: checkbox rows ──
+    const grid = document.createElement('div');
+    grid.className = 'p-3 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1';
+    grid.style.maxHeight = '55vh';
+    grid.style.overflowY = 'auto';
+
+    tags.forEach(([fullLabel, defaultWeight], ti) => {
+      const row = document.createElement('label');
+      row.className = 'tag-row flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs';
+
+      const id = `t${ci}_${ti}`;
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = id;
+      cb.className = 'w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer flex-shrink-0';
+      cb.onchange = () => { state[key(ci, ti)].checked = cb.checked; updateCount(); };
+
+      const wl = document.createElement('span');
+      wl.className = 'w-10 text-center font-mono text-xs text-gray-500 shrink-0';
+      wl.textContent = '1.0';
+
+      const sl = document.createElement('input');
+      sl.type = 'range';
+      sl.min = '0';
+      sl.max = '2';
+      sl.step = '0.1';
+      sl.value = defaultWeight;
+      sl.className = 'w-16 h-1 bg-gray-300 rounded appearance-none cursor-pointer flex-shrink-0';
+      sl.oninput = () => {
+        state[key(ci, ti)].weight = parseFloat(sl.value);
+        wl.textContent = parseFloat(sl.value).toFixed(1);
+      };
+
+      const txt = document.createElement('span');
+      txt.className = 'text-gray-700 truncate select-none';
+      txt.textContent = fullLabel.trim();
+
+      row.appendChild(cb);
+      row.appendChild(wl);
+      row.appendChild(sl);
+      row.appendChild(txt);
+      grid.appendChild(row);
+    });
+
+    details.appendChild(grid);
+  }
+
+  document.getElementById('categories').appendChild(details);
+});
+
+// ── Update count ──────────────────────────────────────────────
+function updateCount() {
+  let n = 0;
+  Object.values(state).forEach(s => { if (s.checked) n++; });
+  document.getElementById('promptCount').textContent = `已選 ${n} 個 tag`;
+}
+
+// ── Generate prompt ──────────────────────────────────────────
+function generatePrompt() {
+  const baseParts = activePreset ? activePreset.split(',').map(s => s.trim()).filter(s => s) : [];
+
+  const extraParts = [];
+
+  const ageCatIdx = catNames.findIndex(c => c.startsWith('年齡'));
+  if (ageCatIdx >= 0) {
+    const ageSlider = document.getElementById('ageSlider');
+    if (ageSlider) {
+      const ageVal = parseInt(ageSlider.value, 10);
+      extraParts.push(`age_${ageVal}`);
+    }
+  }
+
+  catNames.forEach((catName, ci) => {
+    TAGS[catName].forEach((tagArr, ti) => {
+      const st = state[key(ci, ti)];
+      if (!st || !st.checked) return;
+      const [fullLabel] = tagArr;
+      const m = fullLabel.match(/\(([^)]+)\)/);
+      if (!m) return;
+      const tagName = m[1];
+      let w = parseFloat(st.weight).toFixed(1);
+
+      // Check preset weights for duplicate tags
+      if (activePreset && PRESETS[Object.keys(PRESETS).find(k => PRESETS[k].positive === activePreset)]) {
+        const pKey = Object.keys(PRESETS).find(k => PRESETS[k].positive === activePreset);
+        const pw = PRESETS[pKey].weights;
+        if (pw && pw[tagName] != null) {
+          w = parseFloat(pw[tagName]).toFixed(1);
+        }
+      }
+
+      extraParts.push(`${tagName}:${w}`);
+    });
+  });
+
+  // Deduplicate: keep last occurrence of each tag
+  const seen = new Set();
+  const allParts = [...extraParts, ...baseParts].filter(p => {
+    const cleanTag = p.split(':')[0].replace(/[()]/g, '');
+    if (seen.has(cleanTag)) return false;
+    seen.add(cleanTag);
+    return true;
+  });
+
+  document.getElementById('promptArea').value = allParts.join(', ');
+  const totalCount = allParts.length;
+  document.getElementById('emptyMsg').style.display = totalCount ? 'none' : 'block';
+
+  autoNegFromPos(allParts.join(', '));
+
+  const btn = document.getElementById('genBtn');
+  const orig = btn.textContent;
+  btn.textContent = `✓ 已生成 ${totalCount} 個 tag`;
+  setTimeout(() => { btn.textContent = orig; }, 1500);
+}
+
+// ── Copy / Clear ─────────────────────────────────────────────
+async function copyPrompt() {
+  const text = document.getElementById('promptArea').value;
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); } catch {
+    document.getElementById('promptArea').select();
+    document.execCommand('copy');
+  }
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = '✅ 已複製！';
+  btn.classList.replace('bg-green-600', 'bg-green-700');
+  setTimeout(() => { btn.textContent = orig; btn.classList.replace('bg-green-700', 'bg-green-600'); }, 1500);
+}
+
+function clearAll() {
+  if (!confirm('確定要清除所有勾選？')) return;
+  activePreset = '';
+  Object.keys(state).forEach(k => { state[k].checked = false; });
+  // Reset age slider to default (10 for Pony Realism)
+  const ageSlider = document.getElementById('ageSlider');
+  if (ageSlider) {
+    ageSlider.value = 10;
+  }
+  const ageDisplay = document.getElementById('ageValue');
+  if (ageDisplay) ageDisplay.textContent = '10';
+  const ageHint = document.getElementById('ageHint');
+  if (ageHint) ageHint.textContent = '(age_10)';
+  document.getElementById('promptArea').value = '';
+  document.getElementById('emptyMsg').style.display = 'block';
+  updateCount();
+
+  // Reset neg prompt
+  document.getElementById('negPromptArea').value = '';
+  document.getElementById('negEmptyMsg').style.display = 'block';
+  document.getElementById('negCount').textContent = '';
+
+  // Reset presets
+  document.getElementById('presetSelect').value = '';
+  document.getElementById('negPresetSelect').value = '';
+}
+
+// ── Presets: Positive Prompts (Pony Realism 10yo NSFW) ──────────
+const PRESETS = {
+  // ── 品質開頭 ──
+  pony_quality: {
+    desc: '🏆 Pony 品質標籤',
+    positive: 'score_9, score_8_up, score_7_up, score_6_up, source_pony',
+    neg: 'worst quality, low quality, normal quality, lowres, blurry, jpeg artifacts'
+  },
+
+  // ── Loli Solo (1girl 10yo) ──
+  solo_loli_nude: {
+    desc: '👧 1girl 全裸 (nude)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, petite, age_10, small_breasts, flat_chest, bare_body, naked, pussy, pussy_split, labia, thighs_apart, legs_apart, looking_at_viewer, blush',
+    neg: 'mature female, old woman, wrinkles, gray hair, beard, muscular'
+  },
+  solo_loli_half_nude: {
+    desc: '👧 1girl 半裸 (half_nude)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, half_nude, bare_shoulders, cleavage, small_breasts, panties, thighhighs, nipples, looking_at_viewer, blush',
+    neg: 'mature female, old woman, gray hair'
+  },
+  solo_loli_sheer: {
+    desc: '👧 1girl 透濕衣 (see_through)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, see_through, sheer_clothes, wet_clothes, cleavage, small_breasts, panties, nipples, looking_at_viewer, blush',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── Shota Solo (1boy 10yo) ──
+  solo_shota_nude: {
+    desc: '👦 1boy 全裸 (shota nude)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1boy, shota, child, age_10, petite, narrow_shoulders, small_waist, bare_chest, erect_penis, penis_in_pussy, testicles, balls, looking_at_viewer, blush',
+    neg: 'mature male, beard, mustache, hairy chest, gray hair'
+  },
+
+  // ── Loli+Shota 性交 (penis_in_pussy) ──
+  ls_doggystyle: {
+    desc: '🔞 loli + shota 後入 (doggy_style)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy, pussy_split, labia, legs_apart, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, penis_in_pussy, doggy_style, ass_up, spread_legs',
+    neg: 'mature female, old woman, wrinkles, gray hair, beard'
+  },
+  ls_missionary: {
+    desc: '🔞 loli + shota 傳教士 (missionary)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy, pussy_split, labia, lying, face_to_face, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, penis_in_pussy, missionary',
+    neg: 'mature female, old woman, gray hair, beard'
+  },
+  ls_riding: {
+    desc: '🔞 loli + shota 騎乘位 (riding)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy, pussy_split, labia, riding, sitting_on, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, penis_in_pussy, riding',
+    neg: 'mature female, old woman, gray hair, beard'
+  },
+  ls_oral: {
+    desc: '🔞 loli + shota 口交 (oral)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, oral, kneeling, mouth, saliva, penis',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_facesit: {
+    desc: '🔞 loli + shota 坐臉 (face_sitting)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, face_sitting, sitting_on_face, looking_at_viewer, blush, open_mouth, saliva, 1boy, shota, child, age_10, erect_penis, mouth',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_back_view: {
+    desc: '🔞 loli + shota 後入背視 (rear_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, legs_apart, from_behind, looking_back, blush, 1boy, shota, child, age_10, erect_penis, penis_in_pussy, doggy_style, ass_up',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── Loli + Shota 多種角度/姿勢 ──
+  ls_cowgirl_reversed: {
+    desc: '🔞 loli + shota 騎乘背向 (reverse_cowgirl)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, riding, ass_to_face, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_side_view: {
+    desc: '🔞 loli + shota 側視角騎乘 (side_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, riding, side_view, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_69: {
+    desc: '🔞 loli + shota 69式 (69)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, legs_apart, lying, oral, sucking_penis, mouth, saliva, 1boy, shota, child, age_10, erect_penis, sucking_nipples',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_while_sitting: {
+    desc: '🔞 loli + shota 坐姿插入 (seated_penetration)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, sitting, straddling, from_behind, looking_at_viewer, blush, 1boy, shota, child, age_10, erect_penis, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── Loli + Shota 深度細節 (deep_anatomy) ──
+  ls_deep_throat: {
+    desc: '🔞 loli + shota 深喉 (deep_throat)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, deepthroat, mouth, tongue_out, drooling, saliva, 1boy, shota, child, age_10, erect_penis, oral, kneeling',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_neck_bite: {
+    desc: '🔞 loli + shota 咬脖子 (neck_bite)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, biting_neck, looking_at_viewer, blush, open_mouth, saliva, 1boy, shota, child, age_10, erect_penis, penis_in_pussy, doggy_style',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls_hair_pull: {
+    desc: '🔞 loli + shota 扯頭髮 (hair_pull)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, legs_apart, pulling_hair, looking_at_viewer, blush, open_mouth, saliva, 1boy, shota, child, age_10, erect_penis, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── 2Loli + Shota (2girls_1boy) ──
+  ls2_shota_doggystyle: {
+    desc: '🔞 2loli + shota 雙後入 (double_doggy)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 2girls, loli, child, age_10, petite, small_breasts, pussy_split, labia, legs_apart, doggy_style, ass_up, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, double_penetration, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls2_shota_missionary: {
+    desc: '🔞 2loli + shota 傳教士 (double_missionary)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 2girls, loli, child, age_10, petite, small_breasts, pussy_split, labia, lying, missionary, face_to_face, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, double_penetration',
+    neg: 'mature female, old woman, gray hair'
+  },
+  ls2_shota_riding: {
+    desc: '🔞 2loli + shota 騎乘 (double_riding)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 2girls, loli, child, age_10, petite, small_breasts, pussy_split, labia, riding, sitting_on, blush, open_mouth, 1boy, shota, child, age_10, erect_penis, double_penetration, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── Loli + 2Shota (1girl_2boys) ──
+  ls2boys_doggystyle: {
+    desc: '🔞 loli + 2shota 後入 (3way_doggy)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, ass_up, spread_legs, doggy_style, blush, open_mouth, 2boys, shota, child, age_10, erect_penis, double_penetration, penis_in_pussy',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── Shota Solo (erect + detail) ──
+  shota_erect_front: {
+    desc: '👦 shota 正面勃起 (erect_front_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1boy, shota, child, age_10, petite, erect_penis, full_shota_penis, testicles, balls, front_view, looking_at_viewer, blush',
+    neg: 'mature male, beard, gray hair'
+  },
+  shota_erect_rear: {
+    desc: '👦 shota 背面勃起 (erect_rear_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1boy, shota, child, age_10, petite, erect_penis, full_shota_penis, testicles, balls, from_behind, ass_up, looking_back',
+    neg: 'mature male, beard, gray hair'
+  },
+  shota_erect_side: {
+    desc: '👦 shota 側視角勃起 (erect_side_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1boy, shota, child, age_10, petite, erect_penis, full_shota_penis, testicles, side_view, looking_at_viewer',
+    neg: 'mature male, beard, gray hair'
+  },
+
+  // ── Loli Solo 姿勢變體 ──
+  loli_spread_front: {
+    desc: '👧 loli 開腿前視 (spread_legs_front)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, flat_chest, pussy_split, labia, legs_apart, thighs_apart, front_view, looking_at_viewer, blush',
+    neg: 'mature female, old woman, gray hair'
+  },
+  loli_spread_back: {
+    desc: '👧 loli 開腿背視 (spread_legs_rear)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, flat_chest, pussy_split, labia, legs_apart, ass_up, from_behind, looking_back',
+    neg: 'mature female, old woman, gray hair'
+  },
+  loli_spread_side: {
+    desc: '👧 loli 開腿側視 (spread_legs_side)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, legs_apart, side_view, looking_at_viewer',
+    neg: 'mature female, old woman, gray hair'
+  },
+
+  // ── Pony Realism 精確解剖細節 ──
+  ls_anatomy_close: {
+    desc: '🔬 loli+shota 陰道特寫 (pussy_closeup)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, pussy_split, labia, clitoris_exposed, closeup_on_pussy, thighs_apart, cum_drip',
+    neg: 'mature female, old woman'
+  },
+  ls_anatomy_breast_contact: {
+    desc: '🔬 loli+shota 乳房壓力 (breast_squish)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, breast_contact, breasts_squished, lying, face_to_face, 1boy, shota, child, age_10, erect_penis, missionary',
+    neg: 'mature female, old woman'
+  },
+  ls_anatomy_thigh_pressure: {
+    desc: '🔬 loli+shota 大腿壓痕 (thigh_squeeze)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, thighs_apart, thigh_squeeze, cum_on_thighs, doggy_style, ass_up, spread_legs',
+    neg: 'mature female, old woman'
+  },
+
+  // ── 多姿勢綜合 ──
+  ls_missionary_back: {
+    desc: '🔞 loli+shota 傳教士背視 (missionary_rear)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, lying, missionary, face_to_face, blush, open_mouth, from_behind, looking_back, 1boy, shota, child, age_10, erect_penis',
+    neg: 'mature female, old woman'
+  },
+  ls_riding_rear_view: {
+    desc: '🔞 loli+shota 騎乘背視 (riding_rear)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, riding, rear_view, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10, erect_penis',
+    neg: 'mature female, old woman'
+  },
+
+  // ── Shota+Loli 特殊角度 ──
+  ls_doggystyle_rear_view: {
+    desc: '🔞 loli+shota 後入背視 (doggy_rear_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, doggy_style, ass_up, from_behind, looking_back, blush, open_mouth, spread_legs, 1boy, shota, child, age_10, erect_penis',
+    neg: 'mature female, old woman'
+  },
+  ls_doggystyle_side_view: {
+    desc: '🔞 loli+shota 後入側視 (doggy_side_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, doggy_style, ass_up, side_view, spread_legs, 1boy, shota, child, age_10, erect_penis',
+    neg: 'mature female, old woman'
+  },
+  ls_missionary_side_view: {
+    desc: '🔞 loli+shota 傳教士側視 (missionary_side_view)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, missionary, face_to_face, side_view, looking_at_viewer, blush, open_mouth, 1boy, shota, child, age_10',
+    neg: 'mature female, old woman'
+  },
+
+  // ── 綜合標籤強化 (full_detail) ──
+  ls_full_detail_cum: {
+    desc: '🔞 loli+shota 全身精液細節 (cum_coverage)',
+    positive: 'score_9, score_8_up, score_7_up, source_pony, rating_explicit, 1girl, loli, child, age_10, petite, small_breasts, pussy_split, labia, cum_on_stomach, cum_on_breasts, cum_on_thighs, cum_drip, doggy_style, ass_up, spread_legs, open_mouth, saliva, 1boy, shota, child, age_10, erect_penis, penis_in_pussy',
+    neg: 'mature female, old woman'
+  },
+};
+
+// ── Negative Prompt Data ────────────────────────────────────────
+const NEG_PRESETS = {
+  pony_base: {
+    desc: 'Pony V6 基礎負面',
+    neg: 'bad anatomy, bad proportions, crop, cropped, duplicate, extra limbs, error, fewer digits, jpeg artifacts, signature, text, watermark, username, blur, blurry, deformed, mutated, poorly drawn'
+  },
+  strict_anatomy: {
+    desc: '防解剖錯誤（全身）',
+    neg: 'bad anatomy, bad proportions, bad pose, wrong pose, deformed limbs, crooked spine, twisted waist, mismatched shoulders, uneven legs, deformed hands, fused fingers, broken elbows, dislocated joints, unnatural posture, incorrect perspective, floating limbs, disconnected limbs'
+  },
+  strict_deformed: {
+    desc: '防畸形/多餘手指',
+    neg: 'extra limbs, extra legs, extra arms, extra fingers, extras, more fingers, missing arms, missing legs, missing fingers, mutated hands, poorly drawn hands, poorly drawn feet, extra digit, fewer digits, long neck, bad anatomy, limb not attached to body'
+  },
+  strict_watermark: {
+    desc: '防水印/字跡',
+    neg: 'text, watermark, signature, logo, words, letters, characters, font, label, banner, badge, subtitle, credits, username, artist name, url, website link, email'
+  },
+};
+
+// ── Weight display for preset tags ──────────────────────────────
+function applyTagWeights(presetTags, presetWeights) {
+  // Remove old weight inputs if any
+  const existing = document.getElementById('presetWeightPanel');
+  if (existing) existing.remove();
+
+  const selected = presetTags.split(',').map(t => t.trim().split(':')[0].trim()).filter(Boolean);
+  const unique = [...new Set(selected)];
+  if (!unique.length) return;
+
+  const panel = document.createElement('div');
+  panel.id = 'presetWeightPanel';
+  panel.className = 'mt-2 p-3 bg-gray-50 rounded-lg border border-purple-200 text-xs';
+
+  const title = document.createElement('div');
+  title.className = 'font-semibold text-purple-600 mb-1';
+  title.textContent = '⚖️ 內建組合標籤權重（可調整）';
+  panel.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'flex flex-wrap gap-x-4 gap-y-1';
+
+  unique.forEach(tag => {
+    const wVal = getWeight(tag, presetWeights);
+    const sp = document.createElement('span');
+    sp.className = 'inline-flex items-center gap-1';
+    sp.innerHTML = `<span class="font-mono text-gray-600">${tag}</span> `;
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '0.1';
+    inp.max = '2.0';
+    inp.step = '0.1';
+    inp.value = wVal.toFixed(1);
+    inp.className = 'w-14 border border-gray-300 rounded px-1 text-center font-mono text-xs bg-white';
+    inp.oninput = () => {
+      const nv = parseFloat(inp.value);
+      if (!isNaN(nv) && nv >= 0.1 && nv <= 2.0) {
+        sp.querySelector('.fw').textContent = nv.toFixed(1);
+      }
+    };
+    sp.appendChild(inp);
+    sp.appendChild(document.createTextNode(': '));
+    const fw = document.createElement('span');
+    fw.className = 'fw font-mono text-purple-600';
+    fw.textContent = wVal.toFixed(1);
+    sp.appendChild(fw);
+    list.appendChild(sp);
+  });
+
+  panel.appendChild(list);
+  document.querySelector('.sticky').insertBefore(panel, document.querySelector('.sticky > div'));
+}
+
+// ── Apply Preset Functions ──────────────────────────────────────
+function applyPreset() {
+  const sel = document.getElementById('presetSelect');
+  const val = sel.value;
+  if (!val || !PRESETS[val]) return;
+
+  const preset = PRESETS[val];
+  const area = document.getElementById('promptArea');
+  area.value = preset.positive;
+  activePreset = preset.positive;
+  area.parentElement.style.display = 'block';
+  document.getElementById('emptyMsg').style.display = 'none';
+
+  // Set age from preset (default 10)
+  const ageDefault = preset.age_default || 10;
+  const ageSlider = document.getElementById('ageSlider');
+  if (ageSlider) {
+    ageSlider.value = ageDefault;
+    document.getElementById('ageValue').textContent = ageDefault;
+    document.getElementById('ageHint').textContent = `(age_${ageDefault})`;
+  }
+
+  const count = preset.positive.split(',').map(t => t.trim()).filter(t => t).length;
+  document.getElementById('promptCount').textContent = `${preset.desc} (${count} 個 tag)`;
+
+  sel.value = '';
+
+  // Auto-fill negative prompt
+  if (preset.neg) {
+    const negArea = document.getElementById('negPromptArea');
+    negArea.value = preset.neg;
+    document.getElementById('negEmptyMsg').style.display = 'none';
+    const nc = preset.neg.split(',').map(t => t.trim()).filter(t => t).length;
+    document.getElementById('negCount').textContent = `${nc} 個負面 tag`;
+  } else {
+    autoNegFromPos(preset.positive);
+  }
+
+  // Apply weight UI for preset tags
+  applyTagWeights(preset.positive, preset.weights);
+}
+
+function autoNegFromPos(posText) {
+  const negParts = ['lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, cropped, worst quality, low quality'];
+  if (posText.includes('1boy') || posText.includes('2boys')) negParts.push('extra arms on male, deformed male face');
+  if (posText.includes('loli') || posText.includes('child')) negParts.push('mature female, old woman, wrinkled skin, gray hair');
+  if (posText.includes('shota')) negParts.push('beard, mustache, hairy chest, muscular male, broad shoulders');
+  if (posText.includes('futanari') || posText.includes('hermaphrodite')) negParts.push('penis without hermaphrodite');
+  if (posText.includes('cyberpunk')) negParts.push('fantasy, medieval, forest, sword, magic');
+  if (posText.includes('armor') || posText.includes('fantasy')) negParts.push('sci-fi, cyberpunk, neon, futuristic, space');
+  if (posText.includes('2girls') || posText.includes('2boys')) negParts.push('solo, single person, lone character');
+
+  const negArea = document.getElementById('negPromptArea');
+  negArea.value = negParts.join(', ');
+  document.getElementById('negEmptyMsg').style.display = 'none';
+  const nCount = negParts.join(', ').split(',').map(t => t.trim()).filter(t => t).length;
+  document.getElementById('negCount').textContent = `${nCount} 個負面 tag`;
+}
+
+function generateNegPrompt() {
+  const posText = document.getElementById('promptArea').value;
+  if (!posText) {
+    alert('請先生成正面 prompt，我會根據內容推薦負面標籤');
+    return;
+  }
+  // Auto-generate: based on presence of certain tags, add appropriate negs
+  const negParts = [];
+
+  // Always include quality neg
+  negParts.push('lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, cropped, worst quality, low quality');
+
+  if (posText.includes('1boy') || posText.includes('2boys')) {
+    negParts.push('extra arms on male, deformed male face');
+  }
+  if (posText.includes('loli') || posText.includes('child')) {
+    negParts.push('mature female, old woman, wrinkled skin, gray hair');
+  }
+  if (posText.includes('shota')) {
+    negParts.push('beard, mustache, hairy chest, muscular male, broad shoulders');
+  }
+  if (posText.includes('futanari') || posText.includes('hermaphrodite')) {
+    negParts.push('penis without hermaphrodite');
+  }
+  if (posText.includes('cyberpunk')) {
+    negParts.push('fantasy, medieval, forest, sword, magic');
+  }
+  if (posText.includes('armor') || posText.includes('fantasy')) {
+    negParts.push('sci-fi, cyberpunk, neon, futuristic, space');
+  }
+  // Group sex
+  if (posText.includes('2girls') || posText.includes('2boys')) {
+    negParts.push('solo, single person, lone character');
+  }
+
+  document.getElementById('negPromptArea').value = negParts.join(', ');
+  document.getElementById('negEmptyMsg').style.display = 'none';
+  const count = negParts.join(', ').split(',').map(t => t.trim()).filter(t => t).length;
+  document.getElementById('negCount').textContent = `${count} 個負面 tag`;
+
+  // Visual feedback
+  const btn = document.getElementById('genNegBtn');
+  const orig = btn.textContent;
+  btn.textContent = `✓ 已生成 ${count} 個負面 tag`;
+  setTimeout(() => { btn.textContent = orig; }, 1500);
+}
+
+function applyNegPreset() {
+  const sel = document.getElementById('negPresetSelect');
+  const val = sel.value;
+  if (!val || !NEG_PRESETS[val]) return;
+
+  const preset = NEG_PRESETS[val];
+  document.getElementById('negPromptArea').value = preset.neg;
+  document.getElementById('negEmptyMsg').style.display = 'none';
+  const count = preset.neg.split(',').map(t => t.trim()).filter(t => t).length;
+  document.getElementById('negCount').textContent = `${count} 個負面 tag`;
+
+  sel.value = '';
+}
+
+async function copyNegPrompt() {
+  const text = document.getElementById('negPromptArea').value;
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); } catch {
+    document.getElementById('negPromptArea').select();
+    document.execCommand('copy');
+  }
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = '✅ 已複製！';
+  btn.classList.replace('bg-orange-500', 'bg-orange-600');
+  setTimeout(() => { btn.textContent = orig; btn.classList.replace('bg-orange-600', 'bg-orange-500'); }, 1500);
+}
+</script>
+</body>
+</html>

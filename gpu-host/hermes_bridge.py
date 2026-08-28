@@ -3,8 +3,9 @@ import http.server, json, os, re, subprocess, sys, threading, time, urllib.error
 GPU = sys.argv[1] if len(sys.argv) > 1 else '10.35.219.64'
 UP = f'http://{GPU}:8001'
 
-# 每隔幾秒印一次 context 用量；傳 0 可關掉
-WATCH = int(sys.argv[2]) if len(sys.argv) > 2 else 300
+# 每幾次推論印一行 context 用量；傳 0 可關掉。
+# 用次數不用秒數 —— 閒著的時候不該一直洗版面，有在跑才需要看 ctx。
+WATCH = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
 # Hermes 會探測這些 Ollama / LM Studio 風格的端點，llama-server 沒有這些路徑。
 # 直接回空清單，不往上游打，也不印紅字。
@@ -29,10 +30,9 @@ def _gpu():
         return None, None, None
 
 
-def _watch(interval):
-    """定期讀 GPU 那台的 /slots，印一行 context 用量。壞掉不能影響轉發。"""
-    time.sleep(5)
-    while True:
+def _watch_once():
+    """讀一次 /slots 印出 context 用量。壞掉不能影響轉發。"""
+    if True:
         try:
             with urllib.request.urlopen(UP+'/slots', timeout=8) as r:
                 s = (json.loads(r.read().decode('utf-8')) or [{}])[0]
@@ -77,15 +77,15 @@ def _watch(interval):
 
         except Exception as e:
             print(f'[ctx ] 讀不到用量: {e}', flush=True)
-        time.sleep(interval)
 
 
 
 # === Gemini 看圖 ==========================================================
 # llama-server 沒掛 mmproj（掛了會爆 VRAM），所以圖片在這裡先轉成文字。
 # 手機 App 直連 :1234 就有視覺能力，本地模型完全不知道有圖這回事。
-GEMINI_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.environ.get('GEMINI_VISION_MODEL', 'gemini-2.5-flash')
+GEMINI_KEY = os.environ.get('GEMINI_API_KEY',
+                            '')
+GEMINI_MODEL = 'gemini-2.5-flash'
 VISION_PROMPT = ('請把這張圖的內容轉成詳盡的純文字描述：所有文字、數字、'
                  'UI 佈局、程式碼、錯誤訊息都要寫出來，有介面元素請說明位置。')
 
@@ -190,6 +190,8 @@ class B(http.server.BaseHTTPRequestHandler):
         except Exception:
             info = ''
         print(f'[{_n:>4}] 本機推論 OK  {dt:.1f}s{info}', flush=True)
+        if WATCH > 0 and _n % WATCH == 0:
+            _watch_once()
 
     def _fwd(self, body=None):
         if any(self.path.startswith(p) for p in PROBE_PATHS):
@@ -217,6 +219,17 @@ class B(http.server.BaseHTTPRequestHandler):
                           flush=True)
             except Exception as e:
                 print('[img ] 圖片處理失敗，原樣轉發:', str(e)[:80], flush=True)
+        # 串流時 llama-server 預設不回 usage，Hermes 就看不到 prompt_tokens，
+        # 它的自動壓縮判斷 (last_prompt_tokens < threshold) 永遠為 0 -> 不壓縮 -> 撞牆。
+        # 2026-08-27 彈珠台任務就是這樣一路長到 116K 才發現。
+        if is_infer and body:
+            try:
+                j = json.loads(body)
+                if j.get('stream') and 'stream_options' not in j:
+                    j['stream_options'] = {'include_usage': True}
+                    body = json.dumps(j).encode()
+            except Exception:
+                pass
         t0 = time.time()
         try:
             r = urllib.request.Request(UP+self.path, data=body,
@@ -253,7 +266,7 @@ class B(http.server.BaseHTTPRequestHandler):
 print(f'bridge: localhost:1234 -> {UP}')
 print('每次推論會印一行 —— 有印就代表走本機，不是雲端。')
 if WATCH > 0:
-    print(f'每 {WATCH} 秒印一行 context 用量。')
+    print(f'每 {WATCH} 次推論印一行 context 用量。')
 
 try:
     with urllib.request.urlopen(UP+'/v1/models', timeout=10) as r:
@@ -268,7 +281,7 @@ except Exception as e:
     sys.exit(1)
 
 if WATCH > 0:
-    threading.Thread(target=_watch, args=(WATCH,), daemon=True).start()
+    pass      # 改成推論驅動，不需要背景定時執行緒
 
 try:
     http.server.ThreadingHTTPServer(('127.0.0.1', 1234), B).serve_forever()

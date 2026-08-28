@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f172a">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Remote Workstation</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* 禁用手機 Chrome 整頁下拉刷新（避免不小心滑到頂端就重整斷線）*/
+  html, body {
+    overscroll-behavior-y: contain;
+    overscroll-behavior-x: contain;
+  }
+  body {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: pan-x pan-y;  /* 允許正常捲動，但禁止 pull-to-refresh 手勢 */
+  }
+  .btn-press:active { transform: scale(0.97); }
+  /* 對話框內仍可正常捲動，不被 contain 影響 */
+  #chat-log { overscroll-behavior: contain; }
+  /* 細捲軸（檔名左右滑用）*/
+  .scrollbar-thin::-webkit-scrollbar { height: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+
+<div class="max-w-2xl mx-auto p-4 space-y-4">
+
+  <!-- 頂部狀態 -->
+  <header class="bg-slate-800 rounded-2xl p-4 shadow-lg">
+    <div class="flex items-center justify-between mb-2">
+      <h1 class="text-xl font-bold">⚡ Remote Workstation</h1>
+    </div>
+    <div id="status" class="text-sm space-y-1">
+      <div class="flex items-center gap-2">
+        <span>模型:</span>
+        <select id="model-select" onchange="switchModel()" class="bg-slate-700 text-slate-100 rounded text-xs px-2 py-1 flex-1">
+          <option value="">載入中...</option>
+        </select>
+      </div>
+      <div id="model-tagline" class="text-xs text-slate-400 italic ml-12"></div>
+      <div>Server: <span id="server-state">載入中...</span></div>
+      <div>Context: <span id="ctx-info">-</span></div>
+      <div class="w-full bg-slate-700 rounded-full h-2 mt-2">
+        <div id="ctx-bar" class="bg-emerald-500 h-2 rounded-full transition-all" style="width: 0%"></div>
+      </div>
+      <!-- GPU 利用率燈條（每 2 秒更新，5 秒沒動就紅燈）-->
+      <div id="gpu-bar" class="mt-3 pt-3 border-t border-slate-700 text-xs space-y-1">
+        <div class="flex items-center justify-between text-slate-400">
+          <span>🖥 GPU</span>
+          <span id="gpu-summary" class="text-slate-500">--</span>
+        </div>
+        <div id="gpu-list" class="space-y-1"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 工作目錄 -->
+  <section class="bg-slate-800 rounded-2xl p-4 shadow-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold flex items-center gap-2">📁 工作目錄</h2>
+      <div class="flex gap-2">
+        <button onclick="newProject()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1.5 rounded-lg btn-press">
+          ➕ 新建
+        </button>
+        <button onclick="deleteFolder()" class="bg-red-700 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg btn-press">
+          🗑 刪除
+        </button>
+      </div>
+    </div>
+    <select id="folder-select" onchange="onFolderChange()" class="w-full bg-slate-700 text-slate-100 rounded-lg p-3 text-base">
+      <option value="">-- 選擇資料夾 --</option>
+    </select>
+    <div id="folder-info" class="text-xs text-slate-400 mt-2"></div>
+  </section>
+
+
+  <!-- 💬 背景聊天（方案 B：手機只送收，重活電腦背景跑） -->
+  <section class="bg-slate-800 rounded-2xl p-4 shadow-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold">💬 背景聊天 <span class="text-xs text-emerald-400">手機關螢幕也不會斷</span></h2>
+      <div class="flex gap-1 flex-wrap">
+        <button onclick="chatNew()" class="bg-emerald-600 text-xs px-2 py-1 rounded btn-press">🆕 新對話</button>
+        <button onclick="chatShowHistory()" class="bg-indigo-600 text-xs px-2 py-1 rounded btn-press" title="查看 / 切換舊對話">📂 歷史</button>
+        <button onclick="chatCompact()" id="chat-compact-btn" class="bg-purple-600 text-xs px-2 py-1 rounded btn-press" title="請 Claude 摘要歷史">🗜 壓縮</button>
+        <button onclick="chatStop()" class="bg-orange-600 text-xs px-2 py-1 rounded btn-press" title="中斷當前任務，Claude 仍記得對話歷史">⏹ 中斷</button>
+      </div>
+    </div>
+    <div id="chat-session-info" class="text-xs text-slate-400 mb-2">尚未建立 session</div>
+    <div id="other-running-banner" class="hidden text-xs bg-amber-900/40 border border-amber-700 text-amber-200 rounded p-2 mb-2"></div>
+    <div id="chat-log" class="bg-slate-900 rounded-lg p-3 h-[60vh] overflow-y-auto text-sm space-y-2 font-mono">
+      <div class="text-slate-500">點「🆕 新對話」開始（用上面選的工作目錄）</div>
+    </div>
+    <div class="flex gap-2 mt-2">
+      <textarea id="chat-input" rows="3"
+        class="flex-1 bg-slate-700 text-slate-100 rounded-lg p-2 text-sm"
+        placeholder="輸入訊息給 Claude Code... (Ctrl+Enter 送出)"></textarea>
+      <button onclick="chatSend()" id="chat-send-btn"
+        class="bg-blue-600 hover:bg-blue-700 px-4 rounded-lg btn-press font-bold">送出</button>
+    </div>
+  </section>
+
+
+  <!-- 📷 圖片問答（35B Uncensored 才顯示） -->
+  <section id="vision-section" class="hidden bg-slate-800 rounded-2xl p-4 shadow-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold">📷 圖片問答 <span class="text-xs text-pink-400">看圖 + 聯網 + 純聊天</span></h2>
+      <div class="flex gap-1 flex-wrap">
+        <button onclick="visionNew()" class="bg-emerald-600 text-xs px-2 py-1 rounded btn-press">🆕 新對話</button>
+        <button onclick="visionShowHistory()" class="bg-indigo-600 text-xs px-2 py-1 rounded btn-press">📂 歷史</button>
+      </div>
+    </div>
+    <div id="vision-log" class="bg-slate-900 rounded-lg p-3 h-[50vh] overflow-y-auto text-sm space-y-2">
+      <div class="text-slate-500 text-center py-4">點「🆕 新對話」開始</div>
+    </div>
+    <div class="flex flex-col gap-2 mt-2">
+      <div id="vision-preview" class="hidden flex items-center gap-2 bg-slate-700 rounded p-2">
+        <img id="vision-thumb" class="h-12 w-12 object-cover rounded" />
+        <span id="vision-imgname" class="flex-1 text-xs truncate"></span>
+        <button onclick="visionClearImage()" class="text-red-400 px-2 btn-press">✕</button>
+      </div>
+      <div class="flex gap-2">
+        <label class="bg-slate-700 hover:bg-slate-600 px-3 rounded-lg btn-press flex items-center cursor-pointer">
+          📷
+          <input type="file" accept="image/*" onchange="visionPickImage(event)" class="hidden" />
+        </label>
+        <textarea id="vision-input" rows="2"
+          class="flex-1 bg-slate-700 text-slate-100 rounded-lg p-2 text-sm"
+          placeholder="問問題或描述圖片..."></textarea>
+        <button onclick="visionSend()" id="vision-send-btn"
+          class="bg-pink-600 hover:bg-pink-700 px-4 rounded-lg btn-press font-bold">送</button>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <label class="flex items-center gap-1">
+          <span>聯網:</span>
+          <select id="vision-search-mode" class="bg-slate-700 text-slate-100 rounded px-1 py-0.5">
+            <option value="on" selected>強制開（預設）</option>
+            <option value="off">關閉</option>
+            <option value="auto">自動偵測</option>
+          </select>
+        </label>
+        <span id="vision-search-hint" class="text-slate-500"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 檔案列表 -->
+  <section class="bg-slate-800 rounded-2xl p-4 shadow-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold">📦 檔案</h2>
+      <button onclick="loadFiles()" class="text-sm text-slate-400 btn-press">🔄 重新整理</button>
+    </div>
+    <div id="file-list" class="space-y-1 text-sm">
+      <div class="text-slate-500 text-center py-4">選擇資料夾後顯示</div>
+    </div>
+  </section>
+
+  <footer class="text-center text-xs text-slate-500 py-4">
+    Powered by Qwen3.6-27B (local) · ZeroTier 10.35.219.64
+  </footer>
+</div>
+
+<!-- 📂 Vision 歷史對話清單 -->
+<div id="vision-history-modal" class="hidden fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-2">
+  <div class="bg-slate-800 rounded-2xl p-4 max-w-md w-full max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-bold text-lg">📂 圖片問答歷史</h3>
+      <button onclick="document.getElementById('vision-history-modal').classList.add('hidden')"
+              class="text-2xl text-slate-400 btn-press">✕</button>
+    </div>
+    <div id="vision-history-list" class="overflow-y-auto flex-1 space-y-2">
+      <div class="text-slate-500 text-center py-8">載入中...</div>
+    </div>
+    <div class="text-xs text-slate-400 mt-3 text-center">
+      點對話切換 · 🗑 刪除（Flask 重啟會全部消失）
+    </div>
+  </div>
+</div>
+
+<!-- 📂 歷史對話清單 -->
+<div id="history-modal" class="hidden fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-2">
+  <div class="bg-slate-800 rounded-2xl p-4 max-w-md w-full max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-bold text-lg">📂 歷史對話</h3>
+      <button onclick="document.getElementById('history-modal').classList.add('hidden')"
+              class="text-2xl text-slate-400 btn-press">✕</button>
+    </div>
+    <div id="history-list" class="overflow-y-auto flex-1 space-y-2">
+      <div class="text-slate-500 text-center py-8">載入中...</div>
+    </div>
+    <div class="text-xs text-slate-400 mt-3 text-center">
+      🟢 = 目前正在跑 · 點對話切換 · 點 🗑 刪除
+    </div>
+  </div>
+</div>
+
+<!-- 快速指令對話框 -->
+<div id="prompt-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+  <div class="bg-slate-800 rounded-2xl p-5 max-w-md w-full">
+    <h3 id="modal-title" class="font-bold text-lg mb-3">📊 做 PPT</h3>
+    <textarea id="prompt-text" rows="6" class="w-full bg-slate-700 text-slate-100 rounded-lg p-3 text-sm" placeholder="編輯 prompt..."></textarea>
+    <div class="flex gap-2 mt-3">
+      <button onclick="closeModal()" class="flex-1 bg-slate-600 py-3 rounded-lg btn-press">取消</button>
+      <button onclick="sendToTUI()" class="flex-1 bg-emerald-600 py-3 rounded-lg btn-press font-bold">💬 送給 AI</button>
+    </div>
+    <div class="text-xs text-slate-400 mt-3">
+      💡 會在下方「背景聊天」執行，手機關螢幕也不會斷
+    </div>
+  </div>
+</div>
+
+<!-- 🎨 遮罩編輯器 (Inpainting Mask Editor) -->
+<div id="mask-editor-modal" class="hidden fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[60] p-2">
+  <div class="bg-slate-800 rounded-2xl p-4 w-full max-w-2xl flex flex-col max-h-[95vh]">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-bold text-lg">🎨 手動微調遮罩</h3>
+      <button onclick="closeMaskEditor()" class="text-2xl text-slate-400 btn-press">✕</button>
+    </div>
+    <div class="text-xs text-slate-400 mb-2">
+      AI 自動抓取的範圍顯示為<span class="text-red-400">紅色</span>。請用畫筆塗抹要「重新繪製」的區域（例如衣服）。
+    </div>
+    
+    <!-- 工具列 -->
+    <div class="flex items-center gap-4 mb-3 bg-slate-700 p-2 rounded-lg">
+      <div class="flex gap-1 bg-slate-800 p-1 rounded-md">
+        <button id="mask-btn-brush" onclick="setMaskMode('brush')" class="px-3 py-1 rounded bg-blue-600 text-white text-sm btn-press">🖌 畫筆</button>
+        <button id="mask-btn-eraser" onclick="setMaskMode('eraser')" class="px-3 py-1 rounded text-slate-300 hover:bg-slate-600 text-sm btn-press">🧹 橡皮擦</button>
+      </div>
+      <div class="flex items-center gap-2 flex-1">
+        <span class="text-sm">粗細:</span>
+        <input type="range" id="mask-brush-size" min="5" max="100" value="30" class="flex-1 accent-blue-500">
+        <span id="mask-brush-size-label" class="text-sm w-6 text-center">30</span>
+      </div>
+      <div class="flex items-center gap-1 text-xs">
+        <span>粗細:</span>
+        <input type="range" id="mask-brush-size" min="5" max="100" value="30" class="w-20" />
+        <span id="mask-brush-size-label" class="w-6 text-right">30</span>
+      </div>
+      <div class="flex items-center bg-slate-700 rounded overflow-hidden ml-auto">
+        <button onclick="setMaskZoom(-0.5)" class="px-2 py-1 text-slate-300 hover:bg-slate-600 btn-press border-r border-slate-600">🔍-</button>
+        <span id="mask-zoom-label" class="text-xs px-2 text-amber-400">1x</span>
+        <button onclick="setMaskZoom(0.5)" class="px-2 py-1 text-slate-300 hover:bg-slate-600 btn-press border-l border-slate-600">🔍+</button>
+      </div>
+      <button onclick="undoMask()" class="text-sm text-slate-300 px-2 btn-press border border-slate-600 rounded hover:bg-slate-700 py-1">↩ 復原</button>
+      <button onclick="clearMask()" class="text-sm text-red-400 px-2 btn-press border border-red-900 rounded hover:bg-red-900/50 py-1">全清</button>
+    </div>
+
+    <!-- 畫布區 -->
+    <div class="relative flex-1 min-h-0 flex items-center justify-center bg-slate-900 rounded-lg border border-slate-700 overflow-auto" id="mask-canvas-container">
+      <div id="mask-zoom-wrapper" class="relative" style="touch-action: none; width: 100%; height: 100%; margin: auto;">
+        <!-- 原圖當底 -->
+        <img id="mask-bg-img" class="absolute inset-0 w-full h-full object-fill pointer-events-none select-none" />
+        <!-- 畫布疊在上面 -->
+        <canvas id="mask-canvas" class="absolute inset-0 w-full h-full cursor-crosshair touch-none"></canvas>
+      </div>
+    </div>
+
+    <!-- 底部控制 -->
+    <div class="flex flex-col sm:flex-row items-center gap-3 mt-4">
+      <input type="text" id="mask-custom-prompt" class="bg-slate-700 text-slate-100 rounded px-2 py-2 flex-1 w-full text-sm placeholder-slate-400" placeholder="重繪提示詞 (e.g. pink bikini)" />
+      <div class="flex items-center gap-2 flex-1 w-full">
+        <span class="text-sm shrink-0">重繪強度 (Denoise):</span>
+        <input type="range" id="mask-denoise" min="0.1" max="1.0" step="0.05" value="0.9" class="flex-1 accent-amber-500">
+        <span id="mask-denoise-label" class="text-sm text-amber-400 font-bold w-8">0.9</span>
+      </div>
+      <button onclick="submitMaskInpaint()" id="mask-submit-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg btn-press w-full sm:w-auto">
+        送出重繪 🚀
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentFolder = "";
+
+async function refreshStatus() {
+  const r = await fetch("/api/status");
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById("server-state").innerHTML =
+      `🟢 ${d.model} (${d.processing}/${d.total_slots} 忙)`;
+    document.getElementById("ctx-info").innerHTML =
+      `${d.used_ctx.toLocaleString()} / ${d.total_ctx.toLocaleString()} (${d.ctx_pct}%)`;
+    document.getElementById("ctx-bar").style.width = d.ctx_pct + "%";
+    const bar = document.getElementById("ctx-bar");
+    bar.className = "h-2 rounded-full transition-all " +
+      (d.ctx_pct > 85 ? "bg-red-500" : d.ctx_pct > 70 ? "bg-amber-500" : "bg-emerald-500");
+  } else {
+    document.getElementById("server-state").innerHTML = `🔴 Server 沒連線`;
+  }
+}
+
+async function loadFolders() {
+  const r = await fetch("/api/folders");
+  const folders = await r.json();
+  const sel = document.getElementById("folder-select");
+  sel.innerHTML = '<option value="">-- 選擇資料夾 --</option>';
+  folders.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f.path;
+    opt.textContent = `${f.has_claude_md ? "📁" : "📂"} ${f.name} (${f.files} 檔)`;
+    sel.appendChild(opt);
+  });
+  // 還原上次選的
+  const saved = localStorage.getItem("lastFolder");
+  if (saved) {
+    sel.value = saved;
+    onFolderChange();
+  }
+}
+
+function onFolderChange() {
+  currentFolder = document.getElementById("folder-select").value;
+  localStorage.setItem("lastFolder", currentFolder);
+  document.getElementById("folder-info").textContent =
+    currentFolder ? `路徑: ${currentFolder}` : "";
+  loadFiles();
+}
+
+async function loadFiles() {
+  if (!currentFolder) {
+    document.getElementById("file-list").innerHTML =
+      '<div class="text-slate-500 text-center py-4">選擇資料夾後顯示</div>';
+    return;
+  }
+  const r = await fetch(`/api/files?folder=${encodeURIComponent(currentFolder)}`);
+  const files = await r.json();
+  const list = document.getElementById("file-list");
+  if (files.length === 0) {
+    list.innerHTML = '<div class="text-slate-500 text-center py-4">資料夾是空的</div>';
+    return;
+  }
+  list.innerHTML = files.map(f => {
+    if (f.is_dir) {
+      return `<div class="flex items-start gap-2 p-2 hover:bg-slate-700 rounded">
+        <span class="shrink-0 mt-0.5">📁</span>
+        <span class="flex-1 break-all">${f.name}/</span>
+      </div>`;
+    }
+    const sizeKB = (f.size / 1024).toFixed(1);
+    const icon = {
+      ".pdf": "📕", ".docx": "📘", ".pptx": "📙", ".xlsx": "📗",
+      ".py": "🐍", ".html": "🌐", ".md": "📝", ".png": "🖼️", ".jpg": "🖼️",
+      ".db": "💾", ".json": "📋", ".txt": "📄"
+    }[f.ext] || "📄";
+    return `<div class="flex items-start gap-2 p-2 hover:bg-slate-700 rounded">
+      <span class="shrink-0 mt-0.5">${icon}</span>
+      <span class="flex-1 break-all">${f.name}</span>
+      <div class="flex items-center gap-1 shrink-0">
+        <span class="text-xs text-slate-400">${sizeKB} KB</span>
+        <a href="/api/preview?path=${encodeURIComponent(f.path)}" target="_blank" class="text-blue-400 px-1 btn-press">👁</a>
+        <a href="/api/download?path=${encodeURIComponent(f.path)}" class="text-emerald-400 px-1 btn-press">⬇</a>
+        <button onclick="deleteFile('${f.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${f.name.replace(/'/g, "\\'")}')" class="text-red-400 px-1 btn-press">🗑</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function deleteFolder() {
+  if (!currentFolder) { alert("請先選資料夾"); return; }
+  const name = document.getElementById("folder-select").selectedOptions[0]?.textContent || currentFolder;
+  // 雙重確認（防誤觸）
+  if (!confirm(`🗑 確定刪除整個資料夾？\n\n${name}\n\n含底下所有檔案，無法復原！`)) return;
+  if (!confirm(`⚠️ 真的要刪嗎？\n\n${currentFolder}`)) return;
+  const r = await fetch("/api/delete_folder", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({folder: currentFolder})
+  });
+  const d = await r.json();
+  if (!d.ok) { alert("❌ " + d.error); return; }
+  alert("✓ " + d.msg);
+  // 清掉選擇 + 重載清單
+  currentFolder = "";
+  localStorage.removeItem("lastFolder");
+  await loadFolders();
+  document.getElementById("folder-select").value = "";
+  document.getElementById("folder-info").textContent = "";
+  document.getElementById("file-list").innerHTML =
+    '<div class="text-slate-500 text-center py-4">選擇資料夾後顯示</div>';
+}
+
+async function deleteFile(path, name) {
+  if (!confirm(`🗑 刪除 ${name}？\n\n${path}\n\n無法復原`)) return;
+  const r = await fetch("/api/delete_file", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({path: path})
+  });
+  const d = await r.json();
+  if (!d.ok) { alert("❌ " + d.error); return; }
+  loadFiles();  // 重載
+}
+
+async function newProject() {
+  const name = prompt("專案名稱（英文最好）:", "");
+  if (!name) return;
+  const r = await fetch("/api/new_project", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({name})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    alert(`✅ 已建立: ${d.name}\n含 CLAUDE.md 規則檔`);
+    await loadFolders();
+    document.getElementById("folder-select").value = d.path;
+    onFolderChange();
+  } else {
+    alert(`❌ ${d.error}`);
+  }
+}
+
+async function openTUI(mode) {
+  if (!currentFolder) {
+    alert("請先選資料夾");
+    return;
+  }
+  // 先讓後端準備好 _pending_cmd.bat
+  const r = await fetch("/api/prepare_cmd", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({cwd: currentFolder, mode: mode})
+  });
+  const d = await r.json();
+  if (!d.ok) { alert("❌ " + d.error); return; }
+  // 同分頁跳轉到 ttyd（新連線會自動執行 _pending_cmd.bat）
+  location.href = `http://${location.hostname}:7681`;
+}
+
+function quickPrompt(id, template) {
+  if (!currentFolder) {
+    alert("請先選資料夾");
+    return;
+  }
+  // 找 {xxx} 變數
+  const matches = template.match(/\{(\w+)\}/g) || [];
+  let filled = template;
+  for (const m of matches) {
+    const key = m.slice(1, -1);
+    const val = prompt(`填入 ${key}:`);
+    if (val === null) return;
+    filled = filled.replaceAll(m, val);
+  }
+  document.getElementById("prompt-text").value = filled;
+  document.getElementById("modal-title").textContent = "✏️ 編輯 Prompt";
+  document.getElementById("prompt-modal").classList.remove("hidden");
+}
+
+function closeModal() {
+  document.getElementById("prompt-modal").classList.add("hidden");
+}
+
+async function sendToTUI() {
+  const text = document.getElementById("prompt-text").value;
+  if (!text.trim()) return;
+  if (!currentFolder) { alert("請先選資料夾"); return; }
+
+  closeModal();
+  // 走背景聊天：沒 session 自動建一個，再送訊息
+  if (!chatSid) {
+    const r1 = await fetch("/api/chat/new", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({cwd: currentFolder})
+    });
+    const d1 = await r1.json();
+    if (!d1.ok) { alert("❌ " + d1.error); return; }
+    chatSid = d1.session_id;
+    localStorage.setItem("chatSid", chatSid);
+    chatClear();
+    chatUpdateInfo();
+    chatConnectSSE();
+  }
+  // 填入聊天框並送出
+  document.getElementById("chat-input").value = text;
+  chatSend();
+  // 捲到聊天框
+  document.getElementById("chat-log").scrollIntoView({behavior: "smooth", block: "center"});
+}
+
+
+// 防止意外重新整理 / 關分頁：有對話在跑時跳出原生確認
+window.addEventListener("beforeunload", (e) => {
+  // 任何一場 chat 還在跑就警告（用 chat-send-btn disabled 當訊號）
+  const btn = document.getElementById("chat-send-btn");
+  if (btn && btn.disabled) {
+    e.preventDefault();
+    e.returnValue = "對話進行中，確定要離開嗎？";
+    return e.returnValue;
+  }
+});
+
+// 檢查有沒有「別場對話」在跑（不擋你，只提示，避免一次多開）
+async function checkOtherRunning() {
+  if (!chatSid) return;
+  try {
+    const r = await fetch("/api/chat/sessions");
+    const d = await r.json();
+    const others = (d.sessions || []).filter(s => s.running && s.session_id !== chatSid);
+    const banner = document.getElementById("other-running-banner");
+    if (others.length > 0) {
+      const list = others.map(s => `「${s.title}」`).join("、");
+      banner.innerHTML = `⚠️ 還有 ${others.length} 場對話在跑：${list}<br>新訊息會跟它們搶 27B，建議等完或去中斷。`;
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
+  } catch {}
+}
+setInterval(checkOtherRunning, 5000);
+
+// 心跳：背景聊天有自己的 process 管理，這裡保留只為了未來擴充
+let heartbeatId = null;
+function startHeartbeat() {
+  if (heartbeatId) clearInterval(heartbeatId);
+  heartbeatId = setInterval(() => {
+    fetch("/api/heartbeat", {method: "POST"}).catch(() => {});
+  }, 10000);
+}
+
+// ===== 💬 背景聊天（方案 B）=====
+let chatSid = localStorage.getItem("chatSid") || "";
+let chatSse = null;
+let chatCurrentDelta = null;  // 正在串流的 <div>
+
+// status elapsed timer：「⏳ 跑中 (Xs)」每秒自加
+let _statusTimer = null;
+let _statusStartTs = 0;
+let _statusElId = null;
+function _stopStatusTimer() {
+  if (_statusTimer) { clearInterval(_statusTimer); _statusTimer = null; }
+  _statusElId = null;
+}
+
+function chatLogEl() { return document.getElementById("chat-log"); }
+function chatAppend(html) {
+  const log = chatLogEl();
+  log.insertAdjacentHTML("beforeend", html);
+  log.scrollTop = log.scrollHeight;
+}
+function chatClear() { chatLogEl().innerHTML = ""; }
+
+function chatUpdateInfo() {
+  const el = document.getElementById("chat-session-info");
+  if (chatSid) {
+    el.innerHTML = `Session: <span class="text-emerald-400">${chatSid.slice(0,8)}…</span> · cwd: ${currentFolder || "?"}`;
+  } else {
+    el.textContent = "尚未建立 session";
+  }
+}
+
+async function chatNew() {
+  if (!currentFolder) { alert("請先選工作目錄"); return; }
+  // 關掉舊 SSE
+  if (chatSse) { chatSse.close(); chatSse = null; }
+  const r = await fetch("/api/chat/new", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({cwd: currentFolder})
+  });
+  const d = await r.json();
+  if (!d.ok) { alert("❌ " + d.error); return; }
+  chatSid = d.session_id;
+  localStorage.setItem("chatSid", chatSid);
+  chatClear();
+  chatAppend(`<div class="text-emerald-400">✓ 新 session: ${chatSid.slice(0,8)}…</div>`);
+  chatUpdateInfo();
+  chatConnectSSE();
+}
+
+let chatSseRetryCount = 0;
+let chatSseStatusEl = null;
+
+function setSseStatus(text, color) {
+  const el = document.getElementById("chat-session-info");
+  if (!el) return;
+  // 在 session info 旁邊掛一個小指示
+  let dot = document.getElementById("sse-dot");
+  if (!dot) {
+    dot = document.createElement("span");
+    dot.id = "sse-dot";
+    dot.className = "ml-2 text-xs";
+    el.appendChild(dot);
+  }
+  dot.textContent = text;
+  dot.style.color = color;
+}
+
+function chatConnectSSE() {
+  if (!chatSid) return;
+  if (chatSse) { try { chatSse.close(); } catch(e){} }
+  setSseStatus("● 連線中...", "#fbbf24");
+  chatSse = new EventSource(`/api/chat/stream?session_id=${encodeURIComponent(chatSid)}`);
+  chatSse.onopen = () => {
+    chatSseRetryCount = 0;
+    setSseStatus("● 已連線", "#10b981");
+  };
+  chatSse.onmessage = (e) => {
+    try {
+      const ev = JSON.parse(e.data);
+      handleChatEvent(ev);
+    } catch (err) {
+      console.error("SSE parse fail", e.data);
+    }
+  };
+  chatSse.onerror = () => {
+    chatSseRetryCount++;
+    setSseStatus(`● 斷線（重試 ${chatSseRetryCount}）`, "#ef4444");
+    chatSse.close();
+    // 只在第一次斷線寫到對話框（避免洗版）
+    if (chatSseRetryCount === 1) {
+      chatAppend(`<div class="text-amber-400 text-xs">⚠ 連線中斷，後端持續跑中（自動重連）</div>`);
+    }
+    setTimeout(chatConnectSSE, 3000);
+  };
+}
+
+function escapeHtml(s) {
+  let escaped = String(s);
+
+  // 1. Extract markdown images and replace with placeholders
+  const images = [];
+  escaped = escaped.replace(/!\[([^\]]*)\]\((.+?)\)/g, (match, alt, url) => {
+    images.push({ alt, url });
+    return `__MD_IMG_${images.length - 1}__`;
+  });
+
+  // 2. Escape HTML
+  escaped = escaped
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+    
+  // 3. Auto-link URLs without including trailing punctuation
+  const urlRegex = /(https?:\/\/[^\s\n\r<>]+)/gi;
+  escaped = escaped.replace(urlRegex, function(match) {
+    let cleanUrl = match;
+    let punctuation = "";
+    while (cleanUrl.length > 0 && /[.,!?;:]$/.test(cleanUrl)) {
+      punctuation = cleanUrl.slice(-1) + punctuation;
+      cleanUrl = cleanUrl.slice(0, -1);
+    }
+    return `<a href="${cleanUrl}" target="_blank" class="text-blue-400 hover:underline break-all">${cleanUrl}</a>${punctuation}`;
+  });
+
+  // 4. Restore images
+  images.forEach((img, i) => {
+    let finalUrl = img.url;
+    if (finalUrl.includes("/api/vision/img2img") || finalUrl.includes("/api/vision/get_mask")) {
+       finalUrl += (finalUrl.includes("?") ? "&" : "?") + "sid=" + visionSid;
+    }
+    
+    // Extract the replacement prompt from the URL so we can pre-fill the mask editor
+    let promptParam = "";
+    try {
+      const urlObj = new URL(finalUrl, window.location.origin);
+      promptParam = urlObj.searchParams.get("replace") || urlObj.searchParams.get("prompt") || "";
+    } catch(e) {}
+    
+    if (img.alt === "mask") {
+       escaped = escaped.replace(`__MD_IMG_${i}__`, 
+          `<div class="relative mt-2 mb-2 w-fit">
+             <div class="text-xs text-amber-400 mb-1">⏳ 正在自動產生遮罩，請稍候...</div>
+             <img src="${finalUrl}" class="rounded-lg max-w-full h-auto shadow-md border border-amber-500" loading="lazy" onerror="if(!this.retryCount) this.retryCount=0; this.retryCount++; if(this.retryCount < 60) setTimeout(() => { this.src = '${finalUrl}' + '&t=' + Date.now(); }, 3000);" onload="this.previousElementSibling.textContent='✅ 自動遮罩完成，請點擊下方按鈕進行微調';" />
+             <button onclick="openMaskEditor('${finalUrl}', '${promptParam.replace(/'/g, "\\'")}')" class="mt-2 w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-lg shadow btn-press">
+                🖊 進入手動微調 (Inpaint)
+             </button>
+           </div>`
+       );
+       return;
+    }
+    
+    escaped = escaped.replace(`__MD_IMG_${i}__`, 
+      `<div class="relative block mt-2 mb-2 w-fit group">
+        <a href="${finalUrl}" target="_blank" rel="noopener noreferrer" class="block relative">
+          <img src="${finalUrl}" alt="${img.alt}" class="rounded-lg max-w-full h-auto shadow-md border border-slate-700 group-hover:opacity-80 transition-opacity cursor-pointer" loading="lazy" onerror="if(!this.retryCount) this.retryCount=0; this.retryCount++; if(this.retryCount < 60) setTimeout(() => { this.src = '${finalUrl}' + '&t=' + Date.now(); }, 3000);" />
+          <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <span class="bg-black/70 text-white text-xs px-2 py-1 rounded">點擊查看原圖</span>
+          </div>
+        </a>
+        <button onclick="deleteRamImage('${promptParam.replace(/'/g, "\\'")}', this)" class="absolute -top-2 -right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="從 RAM 徹底刪除">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+        </button>
+      </div>`
+    );
+  });
+
+  return escaped;
+}
+
+async function deleteRamImage(prompt, btn) {
+  if (!confirm("確定要從電腦的暫存記憶體 (RAM) 中刪除這張圖片嗎？\n刪除後即使重新整理也無法再顯示。")) return;
+  
+  // Find the container div and show loading
+  const container = btn.closest('.relative');
+  if (container) container.style.opacity = '0.5';
+  
+  try {
+    const r = await fetch("/api/vision/delete_image", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({prompt: prompt})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      if (container) {
+        container.innerHTML = `<div class="p-3 border border-dashed border-slate-600 text-slate-500 rounded text-xs text-center">🗑️ 圖片已從 RAM 中釋放</div>`;
+        container.style.opacity = '1';
+      }
+    } else {
+      alert("刪除失敗：" + d.error);
+      if (container) container.style.opacity = '1';
+    }
+  } catch (e) {
+    alert("刪除錯誤：" + e);
+    if (container) container.style.opacity = '1';
+  }
+}
+
+// 把工具輸入摘要成一行（顯示重點欄位）
+function summarizeToolInput(name, input) {
+  if (!input || typeof input !== "object") return "";
+  const n = name.toLowerCase();
+  if (n === "bash" || n === "powershell") return input.command || "";
+  if (n === "write" || n === "edit") return input.file_path || "";
+  if (n === "read") return input.file_path || "";
+  if (n === "glob" || n === "grep") return input.pattern || "";
+  if (n === "webfetch" || n === "websearch") return input.url || input.query || "";
+  // fallback：第一個 string value
+  for (const k of Object.keys(input)) {
+    if (typeof input[k] === "string") return input[k].slice(0, 120);
+  }
+  return JSON.stringify(input).slice(0, 120);
+}
+
+// 工具名稱對應 emoji
+const TOOL_ICONS = {
+  bash: "💻", powershell: "💻",
+  write: "✏️", edit: "✂️", read: "📖",
+  glob: "🔍", grep: "🔎",
+  webfetch: "🌐", websearch: "🌐",
+  task: "🤖",
+};
+
+function toolIcon(name) {
+  return TOOL_ICONS[name.toLowerCase()] || "🔧";
+}
+
+// 摺疊長文：超過 maxLines 就只顯示前幾行 + 展開鈕
+function collapsibleBlock(text, maxLines = 3, cls = "text-slate-300") {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) {
+    return `<pre class="${cls} whitespace-pre-wrap text-xs ml-6 mt-0.5">${escapeHtml(text)}</pre>`;
+  }
+  const preview = lines.slice(0, maxLines).join("\n");
+  const id = "blk_" + Math.random().toString(36).slice(2, 9);
+  return `<div class="ml-6 mt-0.5">
+    <pre id="${id}_p" class="${cls} whitespace-pre-wrap text-xs">${escapeHtml(preview)}</pre>
+    <pre id="${id}_f" class="${cls} whitespace-pre-wrap text-xs hidden">${escapeHtml(text)}</pre>
+    <button onclick="document.getElementById('${id}_p').classList.toggle('hidden');document.getElementById('${id}_f').classList.toggle('hidden');this.textContent=this.textContent.includes('展開')?'▲ 收起':'▼ 展開 (${lines.length} 行)'"
+      class="text-blue-400 text-xs btn-press mt-0.5">▼ 展開 (${lines.length} 行)</button>
+  </div>`;
+}
+
+function handleChatEvent(ev) {
+  // 從歷史重播時，user 訊息也要顯示
+  if (ev.type === "user") {
+    chatAppend(`<div class="text-blue-400 mt-2">👤 ${escapeHtml(ev.text)}</div>`);
+    return;
+  }
+  if (ev.type === "status") {
+    // 加 elapsed timer：每秒更新「⏳ 跑中 (Xs)」
+    _stopStatusTimer();
+    const statusId = `status_${Date.now()}`;
+    const baseText = ev.text || '';
+    chatAppend(`<div id="${statusId}" class="text-slate-400 text-xs">⏳ ${escapeHtml(baseText)} <span class="status-elapsed">(0s)</span></div>`);
+    _statusStartTs = Date.now();
+    _statusElId = statusId;
+    _statusTimer = setInterval(() => {
+      const el = document.getElementById(_statusElId);
+      if (!el) { _stopStatusTimer(); return; }
+      const sec = Math.floor((Date.now() - _statusStartTs) / 1000);
+      const sp = el.querySelector('.status-elapsed');
+      if (sp) sp.textContent = `(${sec}s)`;
+    }, 1000);
+  } else if (ev.type === "delta") {
+    _stopStatusTimer();
+    if (!chatCurrentDelta) {
+      // 第一個 delta：建立容器並插入「正在輸出」標記
+      chatAppend(`<div class="text-emerald-400 text-xs mt-1">📡 模型輸出中...</div>`);
+      chatCurrentDelta = document.createElement("div");
+      chatCurrentDelta.className = "text-slate-100 whitespace-pre-wrap";
+      chatLogEl().appendChild(chatCurrentDelta);
+    }
+    chatCurrentDelta.textContent += ev.text;
+    chatLogEl().scrollTop = chatLogEl().scrollHeight;
+  } else if (ev.type === "text") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    chatAppend(`<div class="text-slate-100 whitespace-pre-wrap mt-1">🤖 ${escapeHtml(ev.text)}</div>`);
+  } else if (ev.type === "thinking") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    const txt = ev.text || "";
+    chatAppend(`<div class="text-slate-500 italic text-xs mt-1">💭 思考: ${escapeHtml(txt.slice(0,300))}${txt.length>300?"...":""}</div>`);
+  } else if (ev.type === "tool_use") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    const summary = summarizeToolInput(ev.name, ev.input);
+    chatAppend(`<div class="text-cyan-400 mt-1">${toolIcon(ev.name)} ${escapeHtml(ev.name)}: <span class="text-cyan-200">${escapeHtml(summary)}</span></div>`);
+  } else if (ev.type === "tool_result") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    const txt = ev.text || "(空輸出)";
+    const color = ev.is_error ? "text-red-300" : "text-slate-400";
+    const prefix = ev.is_error ? "❌" : "📤";
+    // 把 result 變成可摺疊
+    const block = collapsibleBlock(txt, 3, color);
+    chatAppend(`<div class="text-slate-500 text-xs">${prefix} 結果:</div>${block}`);
+  } else if (ev.type === "result") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    const cost = ev.total_cost_usd ? ` $${ev.total_cost_usd.toFixed(4)}` : "";
+    const dur = ev.duration_ms ? ` ${(ev.duration_ms/1000).toFixed(1)}s` : "";
+    chatAppend(`<div class="text-emerald-400 text-xs">✓ 完成${dur}${cost}</div>`);
+    document.getElementById("chat-send-btn").disabled = false;
+  } else if (ev.type === "error") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    chatAppend(`<div class="text-red-400">❌ ${escapeHtml(ev.text)}</div>`);
+    document.getElementById("chat-send-btn").disabled = false;
+  } else if (ev.type === "warn") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    chatAppend(`<div class="text-amber-300 text-xs mt-1">⚠ ${escapeHtml(ev.text)}</div>`);
+    document.getElementById("chat-send-btn").disabled = false;
+  } else if (ev.type === "done") {
+    chatCurrentDelta = null; _stopStatusTimer();
+    document.getElementById("chat-send-btn").disabled = false;
+  } else if (ev.type === "raw") {
+    chatAppend(`<div class="text-slate-500 text-xs">${escapeHtml(ev.text.slice(0,200))}</div>`);
+  }
+}
+
+async function chatSend() {
+  if (!chatSid) { alert("請先按「🆕 新對話」"); return; }
+  const ta = document.getElementById("chat-input");
+  const msg = ta.value.trim();
+  if (!msg) return;
+
+  // 🛡 保護：context 太滿不給送，避免裝置爆
+  if (lastCtxPct >= CTX_LOCK) {
+    alert(`⚠️ Context 已用 ${lastCtxPct}%（>${CTX_LOCK}%）\n為避免 KV cache 爆，請先按「🗜 壓縮」或「🆕 新對話」`);
+    return;
+  }
+  if (lastCtxPct >= CTX_WARN) {
+    if (!confirm(`⚠️ Context 已用 ${lastCtxPct}%，建議先壓縮。仍要送出嗎？`)) return;
+  }
+
+  // 不本地 append 用戶訊息：後端會 push user event，SSE 會送回來
+  // （這樣其他裝置打開 GUI 也看得到，且 F5 重播時不會重複）
+  ta.value = "";
+  document.getElementById("chat-send-btn").disabled = true;
+
+  // 確保 SSE 已連上（沒連就先連）
+  if (!chatSse || chatSse.readyState === EventSource.CLOSED) {
+    chatConnectSSE();
+    await new Promise(r => setTimeout(r, 300));  // 等連線
+  }
+
+  const r = await fetch("/api/chat/send", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: chatSid, message: msg})
+  });
+  const d = await r.json();
+  if (!d.ok) {
+    chatAppend(`<div class="text-red-400">❌ ${escapeHtml(d.error)}</div>`);
+    document.getElementById("chat-send-btn").disabled = false;
+  }
+}
+
+// Context 緩衝閾值（保護裝置避免爆 KV cache）
+const CTX_WARN = 80;   // 80% 黃色警告
+const CTX_LOCK = 92;   // 92% 鎖死、只能壓縮或新對話
+let lastCtxPct = 0;
+
+async function chatCompact() {
+  if (!chatSid) { alert("還沒有對話可以壓縮"); return; }
+  if (!confirm("壓縮會請 Claude 摘要目前對話。摘要後舊細節可能不見，繼續嗎？")) return;
+  // SSE 確保連著
+  if (!chatSse || chatSse.readyState === EventSource.CLOSED) {
+    chatConnectSSE();
+    await new Promise(r => setTimeout(r, 300));
+  }
+  chatAppend(`<div class="text-purple-400">🗜 開始壓縮對話...</div>`);
+  document.getElementById("chat-send-btn").disabled = true;
+  const r = await fetch("/api/chat/compact", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: chatSid})
+  });
+  const d = await r.json();
+  if (!d.ok) {
+    chatAppend(`<div class="text-red-400">❌ ${escapeHtml(d.error)}</div>`);
+    document.getElementById("chat-send-btn").disabled = false;
+  }
+}
+
+async function chatShowHistory() {
+  const modal = document.getElementById("history-modal");
+  const list = document.getElementById("history-list");
+  modal.classList.remove("hidden");
+  list.innerHTML = `<div class="text-slate-500 text-center py-8">載入中...</div>`;
+  try {
+    const r = await fetch("/api/chat/sessions");
+    const d = await r.json();
+    if (!d.ok || !d.sessions || d.sessions.length === 0) {
+      list.innerHTML = `<div class="text-slate-500 text-center py-8">沒有歷史對話</div>`;
+      return;
+    }
+    list.innerHTML = d.sessions.map(s => {
+      const isCurrent = s.session_id === chatSid;
+      const running = s.running ? `<span class="text-emerald-400">🟢 跑中</span>` : "";
+      const current = isCurrent ? `<span class="text-amber-400 text-xs">[當前]</span>` : "";
+      return `
+        <div class="bg-slate-700 rounded-lg p-3 ${isCurrent ? 'ring-2 ring-amber-500' : ''}">
+          <div class="flex items-start gap-2">
+            <div class="flex-1 cursor-pointer" onclick="chatSwitchTo('${s.session_id}')">
+              <div class="text-sm font-semibold truncate">${escapeHtml(s.title)} ${current}</div>
+              <div class="text-xs text-slate-400 mt-1">
+                📁 ${escapeHtml(s.folder_name)} · ${s.events} 則事件 ${running}
+              </div>
+              <div class="text-xs text-slate-500 mt-0.5">${s.session_id.slice(0,8)}…</div>
+            </div>
+            <button onclick="chatDeleteSession('${s.session_id}')"
+                    class="text-red-400 hover:text-red-300 px-2 py-1 btn-press"
+                    title="刪除">🗑</button>
+          </div>
+        </div>`;
+    }).join("");
+  } catch (e) {
+    list.innerHTML = `<div class="text-red-400 text-center py-8">載入失敗：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function chatSwitchTo(sid) {
+  if (sid === chatSid) {
+    document.getElementById("history-modal").classList.add("hidden");
+    return;
+  }
+  // 切換：關掉舊 SSE，換 sid，載入歷史，連新 SSE
+  if (chatSse) { try { chatSse.close(); } catch(e){} chatSse = null; }
+  chatSid = sid;
+  localStorage.setItem("chatSid", chatSid);
+  document.getElementById("history-modal").classList.add("hidden");
+  chatClear();
+  await chatLoadHistory();
+  chatConnectSSE();
+}
+
+async function chatDeleteSession(sid) {
+  if (!confirm("確定刪除這場對話？無法復原。")) return;
+  const r = await fetch("/api/chat/delete", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: sid})
+  });
+  const d = await r.json();
+  if (!d.ok) { alert("❌ " + d.error); return; }
+  // 如果刪的是當前，要清掉 localStorage
+  if (sid === chatSid) {
+    chatSid = "";
+    localStorage.removeItem("chatSid");
+    chatClear();
+    chatUpdateInfo();
+    if (chatSse) { try { chatSse.close(); } catch(e){} chatSse = null; }
+  }
+  // 重新載入清單
+  chatShowHistory();
+}
+
+async function chatStop() {
+  if (!chatSid) return;
+  if (!confirm("⏹ 中斷目前任務？\n\n• 當前 Claude 工作會立刻停下\n• 對話歷史保留\n• Claude 仍記得前面對話，可繼續接續問")) return;
+  const r = await fetch("/api/chat/stop", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: chatSid})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    chatAppend(`<div class="text-orange-400">⏹ ${escapeHtml(d.msg)}</div>`);
+  } else {
+    chatAppend(`<div class="text-red-400">❌ ${escapeHtml(d.error || '停止失敗')}</div>`);
+  }
+  document.getElementById("chat-send-btn").disabled = false;
+}
+
+// Ctrl+Enter / Enter 送出
+document.addEventListener("DOMContentLoaded", () => {
+  const ta = document.getElementById("chat-input");
+  if (ta) {
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        chatSend();
+      }
+    });
+  }
+});
+
+// ===== 📷 圖片問答（35B Uncensored 模式）=====
+let visionSid = localStorage.getItem("visionSid") || "";
+let visionImage = null;  // {base64, name}
+
+function visionLogEl() { return document.getElementById("vision-log"); }
+function visionAppend(html) {
+  const el = visionLogEl();
+  el.insertAdjacentHTML("beforeend", html);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function visionNew() {
+  const r = await fetch("/api/vision/new", {method: "POST"});
+  const d = await r.json();
+  if (!d.ok) { alert("❌ 無法開新 session"); return; }
+  visionSid = d.session_id;
+  localStorage.setItem("visionSid", visionSid);
+  visionHasHistoryImage = false;
+  visionLastImageRef = null;
+  visionUpdateContinueBanner(false);
+  visionLogEl().innerHTML = `<div class="text-emerald-400 text-xs">✓ 新 session ${visionSid.slice(0,8)}…</div>`;
+}
+
+async function visionShowHistory() {
+  const modal = document.getElementById("vision-history-modal");
+  const list = document.getElementById("vision-history-list");
+  modal.classList.remove("hidden");
+  list.innerHTML = `<div class="text-slate-500 text-center py-8">載入中...</div>`;
+  try {
+    const r = await fetch("/api/vision/sessions");
+    const d = await r.json();
+    if (!d.ok || d.sessions.length === 0) {
+      list.innerHTML = `<div class="text-slate-500 text-center py-8">沒有歷史對話</div>`;
+      return;
+    }
+    list.innerHTML = d.sessions.map(s => {
+      const isCurrent = s.session_id === visionSid;
+      const current = isCurrent ? `<span class="text-amber-400 text-xs">[當前]</span>` : "";
+      return `
+        <div class="bg-slate-700 rounded-lg p-3 ${isCurrent ? 'ring-2 ring-amber-500' : ''}">
+          <div class="flex items-start gap-2">
+            <div class="flex-1 cursor-pointer" onclick="visionSwitchTo('${s.session_id}')">
+              <div class="text-sm font-semibold truncate">${escapeHtml(s.title)} ${current}</div>
+              <div class="text-xs text-slate-400 mt-1">${s.messages} 則訊息</div>
+              <div class="text-xs text-slate-500 mt-0.5">${s.session_id.slice(0,8)}…</div>
+            </div>
+            <button onclick="visionDeleteSession('${s.session_id}')"
+                    class="text-red-400 hover:text-red-300 px-2 py-1 btn-press"
+                    title="刪除">🗑</button>
+          </div>
+        </div>`;
+    }).join("");
+  } catch (e) {
+    list.innerHTML = `<div class="text-red-400 text-center py-8">載入失敗</div>`;
+  }
+}
+
+// 記憶歷史是否含圖（給雙階段 Bug B 用）
+let visionHasHistoryImage = false;
+let visionLastImageRef = null;  // 最近一張圖的 file ref（用 GUI 訊息時可顯示縮圖）
+
+async function visionLoadHistory(sid) {
+  // 載入指定 session 的歷史並重播到對話框
+  visionHasHistoryImage = false;
+  visionLastImageRef = null;
+  visionLogEl().innerHTML = `<div class="text-slate-500 text-xs">↻ 載入歷史...</div>`;
+  try {
+    const r = await fetch(`/api/vision/history?session_id=${encodeURIComponent(sid)}`);
+    const d = await r.json();
+    if (!d.ok || !d.messages || d.messages.length === 0) {
+      visionLogEl().innerHTML = `<div class="text-slate-500 text-center py-4">這場對話是空的，可開始送訊息</div>`;
+      visionUpdateContinueBanner(false);
+      return false;
+    }
+    visionLogEl().innerHTML = "";
+    // 接續對話 banner（在訊息流頂部）
+    visionUpdateContinueBanner(true, d.messages.length);
+    // 重播所有歷史 + 偵測有沒有圖
+    for (const m of d.messages) {
+      if (m.role === "user" && Array.isArray(m.content)) {
+        for (const c of m.content) {
+          if (c.type === "image_url") {
+            visionHasHistoryImage = true;
+            visionLastImageRef = c.image_url.url;
+          }
+        }
+      }
+      visionReplayMessage(m);
+    }
+    return true;
+  } catch {
+    visionLogEl().innerHTML = `<div class="text-red-400 text-center py-4">載入失敗</div>`;
+    return false;
+  }
+}
+
+// 顯示 / 隱藏「接續舊對話」banner
+function visionUpdateContinueBanner(show, count) {
+  let banner = document.getElementById("vision-continue-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "vision-continue-banner";
+    banner.className = "bg-amber-900/30 border border-amber-700 text-amber-200 text-xs rounded p-2 mb-2";
+    const log = visionLogEl();
+    log.parentNode.insertBefore(banner, log);
+  }
+  if (show) {
+    banner.innerHTML = `↻ <b>接續上次對話</b>（${count || "多"} 則歷史）— 想重新開始請按「🆕 新對話」`;
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+async function visionSwitchTo(sid) {
+  if (sid === visionSid) {
+    document.getElementById("vision-history-modal").classList.add("hidden");
+    return;
+  }
+  visionSid = sid;
+  localStorage.setItem("visionSid", visionSid);
+  document.getElementById("vision-history-modal").classList.add("hidden");
+  await visionLoadHistory(sid);
+}
+
+function visionReplayMessage(m) {
+  const role = m.role;
+  const content = m.content;
+  if (role === "user") {
+    if (Array.isArray(content)) {
+      let imgHtml = "", textHtml = "";
+      for (const c of content) {
+        if (c.type === "image_url") {
+          imgHtml = `<img src="${c.image_url.url}" class="max-h-48 rounded mb-1" />`;
+        } else if (c.type === "text") {
+          let txt = c.text || "";
+          if (txt.includes("我的問題：")) txt = txt.split("我的問題：")[1].trim();
+          textHtml = `<div class="text-blue-400">👤 ${escapeHtml(txt)}</div>`;
+        }
+      }
+      visionAppend(`<div class="mt-2">${imgHtml}${textHtml}</div>`);
+    } else {
+      visionAppend(`<div class="text-blue-400 mt-2">👤 ${escapeHtml(content)}</div>`);
+    }
+  } else if (role === "assistant") {
+    visionAppend(`<div class="text-slate-100 whitespace-pre-wrap mt-1">🤖 ${escapeHtml(content)}</div>`);
+  }
+}
+
+async function visionDeleteSession(sid) {
+  if (!confirm("確定刪除這場對話？")) return;
+  const r = await fetch("/api/vision/delete", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: sid})
+  });
+  const d = await r.json();
+  if (!d.ok) { alert("❌ " + d.error); return; }
+  if (sid === visionSid) {
+    visionSid = "";
+    localStorage.removeItem("visionSid");
+    visionLogEl().innerHTML = `<div class="text-slate-500 text-center py-4">點「🆕 新對話」開始</div>`;
+  }
+  visionShowHistory();  // 重新整理清單
+}
+
+function visionPickImage(ev) {
+  const f = ev.target.files[0];
+  if (!f) return;
+  // 自動壓縮到 1024px 內、jpeg 80% 品質（避免 35B mmproj OOM）
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1024;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+      const newSizeKB = Math.round((dataUrl.length * 3 / 4) / 1024);
+      visionImage = {base64: dataUrl, name: f.name};
+      document.getElementById("vision-thumb").src = dataUrl;
+      document.getElementById("vision-imgname").textContent =
+        `${f.name} → ${w}×${h}, ${newSizeKB} KB`;
+      document.getElementById("vision-preview").classList.remove("hidden");
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(f);
+  ev.target.value = "";
+}
+
+function visionClearImage() {
+  visionImage = null;
+  document.getElementById("vision-preview").classList.add("hidden");
+}
+
+// 通用 polling：每 N 秒拉 job 狀態 → done/error 才回傳
+async function pollJob(jobId, onProgress, intervalMs = 2000, maxMs = 600000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const r = await fetch(`/api/job/${encodeURIComponent(jobId)}`);
+      const d = await r.json();
+      if (!d.ok) return {ok: false, error: d.error || "job 不存在"};
+      if (onProgress && d.progress) onProgress(d.progress);
+      if (d.status === "done") return {ok: true, result: d.result};
+      if (d.status === "error") return {ok: false, error: d.error};
+    } catch (e) {
+      // 網路暫斷不 abort，繼續輪詢（手機回來就會接上）
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return {ok: false, error: "polling 超時"};
+}
+
+async function visionSend() {
+  if (!visionSid) { alert("請先按「🆕 新對話」"); return; }
+  const ta = document.getElementById("vision-input");
+  const msg = ta.value.trim();
+  if (!msg && !visionImage) return;
+
+  const searchMode = document.getElementById("vision-search-mode").value;
+
+  // 隱藏「接續中」banner（你既然送了訊息，狀態切到對話進行中）
+  visionUpdateContinueBanner(false);
+
+  // 顯示自己訊息
+  let userHtml = `<div class="text-blue-400 mt-2">👤 ${escapeHtml(msg)}</div>`;
+  if (visionImage) {
+    userHtml = `<div class="mt-2">
+      <img src="${visionImage.base64}" class="max-h-48 rounded mb-1" />
+      <div class="text-blue-400">👤 ${escapeHtml(msg)}</div>
+    </div>`;
+  }
+  visionAppend(userHtml);
+  ta.value = "";
+  document.getElementById("vision-send-btn").disabled = true;
+  const hintEl = document.getElementById("vision-search-hint");
+  hintEl.textContent = "送出中...";
+
+  const imgB64 = visionImage ? visionImage.base64 : null;
+  if (imgB64) {
+    visionLastImageRef = imgB64;
+  }
+  visionClearImage();
+
+  try {
+    // 1. 送出 → 立刻拿到 job_id
+    const r = await fetch("/api/vision/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        session_id: visionSid,
+        message: msg,
+        image_base64: imgB64,
+        search: searchMode,
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      visionAppend(`<div class="text-red-400">❌ ${escapeHtml(d.error)}</div>`);
+      document.getElementById("vision-send-btn").disabled = false;
+      hintEl.textContent = "";
+      return;
+    }
+    // 2. polling job（螢幕關掉沒事，回來繼續拉）
+    const jobId = d.job_id;
+    localStorage.setItem("visionLastJob", jobId);  // 萬一 F5 還能接續
+
+    const final = await pollJob(jobId, (p) => { hintEl.textContent = p; });
+
+    if (!final.ok) {
+      visionAppend(`<div class="text-red-400">❌ ${escapeHtml(final.error)}</div>`);
+    } else {
+      const res = final.result || {};
+      if (res.reused_image) {
+        visionAppend(`<div class="text-cyan-400 text-xs">📷 自動沿用上次圖片（沒重新上傳）</div>`);
+      }
+      if (res.searched) {
+        const q = res.search_query ? `「${res.search_query}」` : "";
+        visionAppend(`<div class="text-amber-400 text-xs">🌐 已聯網查詢 ${escapeHtml(q)}</div>`);
+      }
+      if (res.skipped_search_for_img) {
+        visionAppend(`<div class="text-slate-500 text-xs">ℹ️ 有圖時自動關閉聯網（避免回應空白）</div>`);
+      }
+      const reply = (res.reply || "").trim();
+      if (reply) {
+        visionAppend(`<div class="text-slate-100 whitespace-pre-wrap mt-1">🤖 ${escapeHtml(reply)}</div>`);
+      } else {
+        visionAppend(`<div class="text-amber-400">⚠️ 模型回應空白。試試：拆成兩步問 / 不上傳圖 / 簡化問題。</div>`);
+      }
+      localStorage.removeItem("visionLastJob");
+    }
+  } catch (e) {
+    visionAppend(`<div class="text-red-400">❌ ${escapeHtml(e.message)}</div>`);
+  }
+  document.getElementById("vision-send-btn").disabled = false;
+  hintEl.textContent = "";
+}
+
+// Ctrl+Enter 送出
+document.addEventListener("DOMContentLoaded", () => {
+  const ta = document.getElementById("vision-input");
+  if (ta) {
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        visionSend();
+      }
+    });
+  }
+});
+
+// 根據當前模型決定顯示哪些區塊
+// 35B 越獄：純看圖+聯網（隱藏 工作目錄/檔案/背景聊天）
+// 其他：背景聊天/工作目錄/檔案（隱藏圖片問答）
+function updateVisionVisibility(modelId) {
+  const isJailbreak = (modelId === "uncensored35");
+
+  // 圖片問答只在越獄版顯示
+  const vision = document.getElementById("vision-section");
+  if (vision) vision.classList.toggle("hidden", !isJailbreak);
+
+  // 背景聊天 / 工作目錄 / 檔案 在非越獄時顯示
+  const chat = document.querySelector('section h2 span.text-emerald-400'); // 找 💬 背景聊天 那節
+  if (chat) {
+    const chatSection = chat.closest("section");
+    if (chatSection) chatSection.classList.toggle("hidden", isJailbreak);
+  }
+  // 工作目錄區塊（含 📁 標題）
+  const folderHeaders = Array.from(document.querySelectorAll("section h2")).filter(h => h.textContent.includes("工作目錄"));
+  folderHeaders.forEach(h => {
+    const sec = h.closest("section");
+    if (sec) sec.classList.toggle("hidden", isJailbreak);
+  });
+  // 檔案區塊（含 📦 標題）
+  const fileHeaders = Array.from(document.querySelectorAll("section h2")).filter(h => h.textContent.includes("📦"));
+  fileHeaders.forEach(h => {
+    const sec = h.closest("section");
+    if (sec) sec.classList.toggle("hidden", isJailbreak);
+  });
+}
+
+// ===== 模型切換 =====
+let MODEL_CACHE = [];  // 存 tagline 給 onchange 用
+
+const CAT_LABEL = {general: "📝 通用", code: "💻 寫程式", chat: "🔓 純聊天"};
+
+async function loadModelList() {
+  try {
+    const r = await fetch("/api/model/list");
+    const d = await r.json();
+    if (!d.ok) return;
+    MODEL_CACHE = d.models;
+    const sel = document.getElementById("model-select");
+
+    // 分類分組 (optgroup)
+    const groups = {general: [], code: [], chat: []};
+    for (const m of d.models) {
+      (groups[m.category] || groups.general).push(m);
+    }
+
+    let html = "";
+    if (!d.current) {
+      html += '<option value="" selected>(未啟動 / 未知)</option>';
+    }
+    for (const cat of ["general", "code", "chat"]) {
+      if (groups[cat].length === 0) continue;
+      html += `<optgroup label="${CAT_LABEL[cat]}">`;
+      for (const m of groups[cat]) {
+        const sel = (m.id === d.current) ? "selected" : "";
+        html += `<option value="${m.id}" ${sel}>${m.label}</option>`;
+      }
+      html += `</optgroup>`;
+    }
+    sel.innerHTML = html;
+
+    // 更新 tagline + 圖片問答區塊顯示
+    updateTagline(d.current);
+    updateVisionVisibility(d.current);
+  } catch {}
+}
+
+function updateTagline(modelId) {
+  const tagEl = document.getElementById("model-tagline");
+  if (!tagEl) return;
+  const m = MODEL_CACHE.find(x => x.id === modelId);
+  tagEl.textContent = m ? m.tagline : "";
+}
+
+async function switchModel() {
+  const sel = document.getElementById("model-select");
+  const target = sel.value;
+  if (!target) return;
+  const m = MODEL_CACHE.find(x => x.id === target);
+  const tagline = m ? m.tagline : "";
+  if (!confirm(`切換到「${m?.label || target}」？\n\n${tagline}\n\n• 當前對話會中斷\n• 載入新模型約 60-120 秒\n• 載入期間無法用 AI`)) {
+    loadModelList();
+    return;
+  }
+  updateTagline(target);
+
+  // 顯示頂部 loading banner
+  showSwitchBanner(`⏳ 準備切換到 ${m?.label || target}...`);
+
+  const r = await fetch("/api/model/switch", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({model: target})
+  });
+  const d = await r.json();
+  if (!d.ok) {
+    hideSwitchBanner();
+    alert("❌ " + d.error);
+    loadModelList();
+    return;
+  }
+
+  // polling job 直到完成
+  const final = await pollJob(d.job_id, (p) => {
+    showSwitchBanner(p);
+  }, 2000, 200000);
+
+  hideSwitchBanner();
+  if (!final.ok) {
+    alert("❌ 切換失敗: " + final.error);
+  } else {
+    const r = final.result || {};
+    showSwitchBanner(`✓ 已切換 (${r.elapsed_sec}s) → ${r.label}`, 3000);
+  }
+  loadModelList();
+}
+
+function showSwitchBanner(text, autoHideMs = 0) {
+  let bar = document.getElementById("switch-banner");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "switch-banner";
+    bar.className = "fixed top-0 left-0 right-0 bg-blue-700 text-white text-center py-2 z-50 text-sm font-semibold shadow-lg";
+    document.body.appendChild(bar);
+  }
+  bar.textContent = text;
+  bar.style.display = "block";
+  if (autoHideMs > 0) {
+    setTimeout(hideSwitchBanner, autoHideMs);
+  }
+}
+function hideSwitchBanner() {
+  const bar = document.getElementById("switch-banner");
+  if (bar) bar.style.display = "none";
+}
+
+// 初始化
+refreshStatus();
+loadModelList();
+loadFolders();
+startHeartbeat();
+setInterval(refreshStatus, 5000);
+setInterval(loadModelList, 10000);  // 每 10 秒檢查當前模型
+
+// F5 / 重開 App：先從後端撈歷史重播，再連 SSE 接續直播
+async function chatLoadHistory() {
+  if (!chatSid) return;
+  try {
+    const r = await fetch(`/api/chat/history?session_id=${encodeURIComponent(chatSid)}`);
+    if (!r.ok) {
+      // session 在後端不存在了（Flask 重啟過）— 清掉
+      localStorage.removeItem("chatSid");
+      chatSid = "";
+      chatUpdateInfo();
+      return;
+    }
+    const d = await r.json();
+    chatClear();
+    chatAppend(`<div class="text-slate-500 text-xs">↻ 載入歷史（${d.events.length} 則事件）</div>`);
+    // 重播：把所有事件丟給 handleChatEvent
+    for (const ev of d.events) {
+      handleChatEvent(ev);
+    }
+    if (d.running) {
+      chatAppend(`<div class="text-amber-400 text-xs">⏳ 後端仍在跑中，等待接續...</div>`);
+    } else {
+      chatAppend(`<div class="text-slate-500 text-xs">─ 歷史載入完成 ─</div>`);
+    }
+    chatUpdateInfo();
+  } catch (e) {
+    console.error("history load fail", e);
+  }
+}
+
+// 若有舊 session，先載歷史再連 SSE
+if (chatSid) {
+  (async () => {
+    await chatLoadHistory();
+    if (chatSid) chatConnectSSE();  // 載完才連 SSE，避免重複
+  })();
+}
+
+// Vision F5 自動載歷史
+if (visionSid) {
+  (async () => {
+    await visionLoadHistory(visionSid);
+  })();
+}
+
+// ===== GPU 利用率燈條 =====
+// 每 GPU 維護「最後一次 >5% 的時間」，若超過 5 秒沒動 → 紅燈
+const _gpuLastActive = {};   // {0: ts, 1: ts, 2: ts}
+const GPU_IDLE_THRESHOLD = 5;     // 利用率 < 5% 視為閒
+const GPU_IDLE_RED_AFTER_MS = 5000;  // 5 秒沒動就紅
+
+async function gpuTick() {
+  try {
+    const r = await fetch('/api/gpu');
+    const j = await r.json();
+    if (!j.ok || !j.gpus || !j.gpus.length) {
+      document.getElementById('gpu-summary').textContent = 'N/A';
+      return;
+    }
+    const now = Date.now();
+    const list = document.getElementById('gpu-list');
+    const parts = [];
+    let anyActive = false;
+    for (const g of j.gpus) {
+      // 更新 last-active 時間
+      if (g.util >= GPU_IDLE_THRESHOLD) {
+        _gpuLastActive[g.i] = now;
+        anyActive = true;
+      }
+      const lastTs = _gpuLastActive[g.i] || 0;
+      const idleMs = now - lastTs;
+      const isRed = (lastTs === 0) || (idleMs > GPU_IDLE_RED_AFTER_MS);
+      // 燈號顏色：>50% 綠、5-50% 黃、<5% 持續 5s 紅
+      let dot, barColor;
+      if (isRed) { dot = '🔴'; barColor = 'bg-red-600'; }
+      else if (g.util >= 50) { dot = '🟢'; barColor = 'bg-emerald-500'; }
+      else if (g.util >= GPU_IDLE_THRESHOLD) { dot = '🟡'; barColor = 'bg-yellow-500'; }
+      else { dot = '⚪'; barColor = 'bg-slate-500'; }  // 剛閒下來、還沒超過紅燈門檻
+      const pct = Math.max(2, Math.min(100, g.util));
+      parts.push(`
+        <div class="flex items-center gap-2">
+          <span class="w-6 text-center">${dot}</span>
+          <span class="w-12 text-slate-400">${g.name}</span>
+          <div class="flex-1 bg-slate-700 rounded-full h-1.5">
+            <div class="${barColor} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
+          </div>
+          <span class="w-10 text-right tabular-nums ${isRed ? 'text-red-400' : 'text-slate-300'}">${g.util}%</span>
+        </div>
+      `);
+    }
+    list.innerHTML = parts.join('');
+    document.getElementById('gpu-summary').textContent =
+      anyActive ? `${j.gpus.filter(g=>g.util>=GPU_IDLE_THRESHOLD).length}/${j.gpus.length} 在動` : '全閒';
+  } catch (e) {
+    document.getElementById('gpu-summary').textContent = '錯誤';
+  }
+}
+gpuTick();
+setInterval(gpuTick, 2000);
+
+// ==========================================
+// 🎨 Mask Editor Logic
+// ==========================================
+let maskCtx;
+let maskCanvasObj;
+let isDrawing = false;
+let maskMode = "brush";
+let maskImgWidth = 0;
+let maskImgHeight = 0;
+let originalImgFile = null; // Store the original file blob
+
+function openMaskEditor(maskUrl, promptParam) {
+  document.getElementById('mask-editor-modal').classList.remove('hidden');
+  document.getElementById('mask-custom-prompt').value = promptParam || "";
+  
+  const bgImg = document.getElementById('mask-bg-img');
+  const canvas = document.getElementById('mask-canvas');
+  maskCanvasObj = canvas;
+  maskCtx = canvas.getContext('2d', { willReadFrequently: true });
+  
+  // Set original image as background (fallback to vision-thumb if available)
+  const thumb = document.getElementById('vision-thumb');
+  let fallbackSrc = null;
+  if (thumb && thumb.src && !thumb.src.endsWith("undefined") && thumb.src.length > 50) {
+     fallbackSrc = thumb.src;
+  } else if (typeof visionLastImageRef !== 'undefined' && visionLastImageRef) {
+     fallbackSrc = visionLastImageRef;
+  }
+  
+  if (fallbackSrc) {
+     bgImg.src = fallbackSrc;
+     // Convert dataURL to blob for submission
+     fetch(fallbackSrc).then(res => res.blob()).then(blob => {
+       originalImgFile = blob;
+     });
+  } else {
+     bgImg.src = "";
+     alert("找不到原始上傳圖片，請重新上傳照片。");
+  }
+  
+  const mImg = new Image();
+  mImg.crossOrigin = "Anonymous";
+  mImg.onload = () => {
+    maskImgWidth = mImg.width;
+    maskImgHeight = mImg.height;
+    canvas.width = mImg.width;
+    canvas.height = mImg.height;
+    
+    // Draw the generated mask (which is black and white from CLIPSeg)
+    maskCtx.drawImage(mImg, 0, 0);
+    
+    // Convert black/white mask into transparent red for editing
+    const imgData = maskCtx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]; // black is 0, white is > 0
+      if (r > 128) {
+         data[i] = 255;   // R
+         data[i+1] = 0;   // G
+         data[i+2] = 0;   // B
+         data[i+3] = 150; // Alpha (semi-transparent red)
+      } else {
+         data[i+3] = 0;   // fully transparent
+      }
+    }
+    maskCtx.putImageData(imgData, 0, 0);
+    
+    // Setup Zoom base dimensions
+    maskZoom = 1;
+    const container = document.getElementById('mask-canvas-container');
+    let cw = container.clientWidth;
+    let ch = container.clientHeight;
+    if (cw <= 0 || ch <= 0) {
+      cw = window.innerWidth * 0.8;
+      ch = window.innerHeight * 0.55;
+    } else {
+      cw -= 16;
+      ch -= 16;
+    }
+    const scale = Math.min(cw / mImg.width, ch / mImg.height);
+    maskBaseWidth = mImg.width * scale;
+    maskBaseHeight = mImg.height * scale;
+    updateMaskZoom();
+  };
+  mImg.src = maskUrl;
+  maskHistory = []; // Reset history
+}
+
+let maskHistory = [];
+let maskZoom = 1;
+let maskBaseWidth = 0;
+let maskBaseHeight = 0;
+
+function setMaskZoom(delta) {
+  maskZoom = Math.max(1, Math.min(maskZoom + delta, 5));
+  updateMaskZoom();
+}
+
+function updateMaskZoom() {
+  document.getElementById('mask-zoom-label').innerText = maskZoom + 'x';
+  const wrapper = document.getElementById('mask-zoom-wrapper');
+  wrapper.style.width = (maskBaseWidth * maskZoom) + 'px';
+  wrapper.style.height = (maskBaseHeight * maskZoom) + 'px';
+}
+
+function saveMaskState() {
+  if (!maskCtx || !maskCanvasObj) return;
+  const imgData = maskCtx.getImageData(0, 0, maskCanvasObj.width, maskCanvasObj.height);
+  maskHistory.push(imgData);
+  if (maskHistory.length > 20) maskHistory.shift();
+}
+function undoMask() {
+  if (maskHistory.length > 0) {
+    const lastState = maskHistory.pop();
+    maskCtx.putImageData(lastState, 0, 0);
+  }
+}
+
+function closeMaskEditor() {
+  document.getElementById('mask-editor-modal').classList.add('hidden');
+}
+
+function setMaskMode(mode) {
+  maskMode = mode;
+  document.getElementById('mask-btn-brush').className = (mode === 'brush' ? 'px-3 py-1 rounded bg-blue-600 text-white text-sm btn-press' : 'px-3 py-1 rounded text-slate-300 hover:bg-slate-600 text-sm btn-press');
+  document.getElementById('mask-btn-eraser').className = (mode === 'eraser' ? 'px-3 py-1 rounded bg-blue-600 text-white text-sm btn-press' : 'px-3 py-1 rounded text-slate-300 hover:bg-slate-600 text-sm btn-press');
+  document.getElementById('mask-btn-pan').className = (mode === 'pan' ? 'px-3 py-1 rounded bg-blue-600 text-white text-sm btn-press border-l border-slate-600' : 'px-3 py-1 rounded text-slate-300 hover:bg-slate-600 text-sm btn-press border-l border-slate-600');
+  
+  const canvas = document.getElementById('mask-canvas');
+  if (mode === 'pan') {
+    canvas.classList.remove('touch-none', 'cursor-crosshair');
+    canvas.classList.add('cursor-move');
+  } else {
+    canvas.classList.add('touch-none', 'cursor-crosshair');
+    canvas.classList.remove('cursor-move');
+  }
+}
+
+function clearMask() {
+  if(maskCtx && maskCanvasObj) {
+    saveMaskState();
+    maskCtx.clearRect(0, 0, maskCanvasObj.width, maskCanvasObj.height);
+  }
+}
+
+document.getElementById('mask-brush-size').addEventListener('input', (e) => {
+  document.getElementById('mask-brush-size-label').textContent = e.target.value;
+});
+document.getElementById('mask-denoise').addEventListener('input', (e) => {
+  document.getElementById('mask-denoise-label').textContent = e.target.value;
+});
+
+function getMousePos(canvas, evt) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+const cEl = document.getElementById('mask-canvas');
+const startDraw = (e) => {
+  if (!maskCtx) return;
+  saveMaskState();
+  isDrawing = true;
+  draw(e);
+};
+const draw = (e) => {
+  if (!isDrawing || !maskCtx || maskMode === 'pan') return;
+  e.preventDefault();
+  const pos = getMousePos(cEl, e);
+  const size = parseInt(document.getElementById('mask-brush-size').value);
+  
+  if (maskMode === 'brush') {
+    maskCtx.globalCompositeOperation = 'source-over';
+    maskCtx.fillStyle = 'rgba(255, 0, 0, 0.588)'; // 150/255 alpha
+    maskCtx.beginPath();
+    maskCtx.arc(pos.x, pos.y, size/2, 0, Math.PI * 2);
+    maskCtx.fill();
+  } else {
+    maskCtx.globalCompositeOperation = 'destination-out';
+    maskCtx.beginPath();
+    maskCtx.arc(pos.x, pos.y, size/2, 0, Math.PI * 2);
+    maskCtx.fill();
+    maskCtx.globalCompositeOperation = 'source-over';
+  }
+};
+const stopDraw = () => { isDrawing = false; };
+
+cEl.addEventListener('mousedown', startDraw);
+cEl.addEventListener('mousemove', draw);
+cEl.addEventListener('mouseup', stopDraw);
+cEl.addEventListener('mouseout', stopDraw);
+cEl.addEventListener('touchstart', startDraw, {passive: false});
+cEl.addEventListener('touchmove', draw, {passive: false});
+cEl.addEventListener('touchend', stopDraw);
+
+async function submitMaskInpaint() {
+  if (!originalImgFile) {
+    alert("沒有找到原始圖片。");
+    return;
+  }
+  try {
+  const prompt = document.getElementById('mask-custom-prompt').value.trim();
+  if (!prompt) {
+    alert("請輸入重繪提示詞");
+    return;
+  }
+  const denoise = document.getElementById('mask-denoise').value;
+  const btn = document.getElementById('mask-submit-btn');
+  btn.disabled = true;
+  btn.textContent = "傳送中...";
+
+  // 1. Convert Canvas (transparent red) to White/Black Mask for ComfyUI
+  const submitCanvas = document.createElement('canvas');
+  submitCanvas.width = maskCanvasObj.width;
+  submitCanvas.height = maskCanvasObj.height;
+  const sCtx = submitCanvas.getContext('2d');
+  
+  // Fill black background
+  sCtx.fillStyle = 'black';
+  sCtx.fillRect(0, 0, submitCanvas.width, submitCanvas.height);
+  
+  // Draw red where alpha > 0 (ComfyUI will use red channel)
+  const imgData = maskCtx.getImageData(0, 0, maskCanvasObj.width, maskCanvasObj.height);
+  const data = imgData.data;
+  const outData = sCtx.createImageData(submitCanvas.width, submitCanvas.height);
+  const oData = outData.data;
+  
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i+3] > 10) { // If there is any painted mask
+       oData[i] = 255; // R = 255
+       oData[i+1] = 255;
+       oData[i+2] = 255;
+       oData[i+3] = 255; // Opaque white
+    } else {
+       oData[i] = 0;
+       oData[i+1] = 0;
+       oData[i+2] = 0;
+       oData[i+3] = 255; // Opaque black
+    }
+  }
+  sCtx.putImageData(outData, 0, 0);
+  
+  const maskB64 = submitCanvas.toDataURL('image/png');
+  
+  // 2. Submit to API via form data
+  const formData = new FormData();
+  formData.append('prompt', encodeURIComponent(prompt));
+  formData.append('denoise', denoise);
+  formData.append('sid', visionSid);
+  formData.append('mask_b64', maskB64);
+  // Do NOT send the huge original image again, backend uses VISION_HISTORY!
+  // formData.append('image', originalImgFile, "original.png");
+  
+  closeMaskEditor();
+  
+  // Simulate an AI thinking process in vision UI
+  const loaderId = "inpaint-loader-" + Date.now();
+  visionLogEl().insertAdjacentHTML("beforeend", `
+    <div class="text-emerald-400 text-xs mt-2">🚀 送出局部重繪: ${escapeHtml(prompt)} (Denoise: ${denoise})</div>
+    <div id="${loaderId}" class="flex items-center gap-2 text-pink-400 text-sm mt-1 mb-2">
+      <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <span>AI 繪圖伺服器正在生成中，大約需要 30 秒，請稍候...</span>
+    </div>
+  `);
+  visionLogEl().scrollTop = visionLogEl().scrollHeight;
+  
+  try {
+    const res = await fetch("/api/vision/inpaint", {
+      method: "POST",
+      body: formData
+    });
+    
+    if (res.status === 503) {
+      alert("伺服器正在算圖中，請稍後重試。");
+    } else if (!res.ok) {
+      alert("重繪失敗");
+    } else {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      visionLogEl().insertAdjacentHTML("beforeend", `
+        <div class="relative mt-2 mb-2 w-fit group">
+          <a href="${url}" target="_blank" class="block relative">
+            <img src="${url}" class="rounded-lg max-w-full h-auto shadow-md border border-slate-700" />
+          </a>
+        </div>
+      `);
+      visionLogEl().scrollTop = visionLogEl().scrollHeight;
+    }
+  } catch (e) {
+    alert("Fetch Error: " + e);
+  } finally {
+    const loaderEl = document.getElementById(loaderId);
+    if (loaderEl) loaderEl.remove();
+    btn.disabled = false;
+    btn.textContent = "送出重繪 🚀";
+  }
+  } catch (globalErr) {
+    alert("Global JS Error: " + globalErr.message + "\n" + globalErr.stack);
+    document.getElementById('mask-submit-btn').disabled = false;
+    document.getElementById('mask-submit-btn').textContent = "送出重繪 🚀";
+  }
+}
+
+</script>
+</body>
+</html>
