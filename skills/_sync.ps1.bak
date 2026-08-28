@@ -10,7 +10,7 @@
         .\_sync.ps1 -List        # 只列出目前備份了哪些
 #>
 
-param([switch]$Restore, [switch]$List, [switch]$Auto)
+param([switch]$Restore, [switch]$List)
 
 $Local = "$env:LOCALAPPDATA\hermes\skills"
 $Repo  = $PSScriptRoot
@@ -56,25 +56,6 @@ if ($Restore) {
 # 預設：備份
 Write-Host ''
 Write-Host '  === 備份：本機 -> 倉庫 ===' -ForegroundColor Cyan
-
-# -Auto：把「本機有、倉庫沒有」的自訂 skill 也一起收進來。
-# 靠內容特徵認自訂的 —— 官方 skill 不會提到這台機器專屬的東西。
-if ($Auto) {
-    $marks = 'STM32H7S78|pjunm|Qwen3\.8|andriod|tensor-split|hermes_bridge'
-    Get-ChildItem -Path $Local -Filter 'SKILL.md' -Recurse -File -ErrorAction SilentlyContinue |
-      ForEach-Object {
-        $rel = $_.Directory.FullName.Substring($Local.Length).TrimStart('')
-        if (Test-Path -LiteralPath (Join-Path $Repo $rel)) { return }   # 已收錄
-        if (-not (Select-String -LiteralPath $_.FullName -Pattern $marks -Quiet)) { return }
-        $parent = Split-Path (Join-Path $Repo $rel) -Parent
-        if (-not (Test-Path -LiteralPath $parent)) {
-            New-Item -ItemType Directory -Path $parent -Force | Out-Null
-        }
-        Copy-Item -LiteralPath $_.Directory.FullName -Destination $parent -Recurse -Force
-        Write-Host "    [新收錄] $rel" -ForegroundColor Magenta
-      }
-}
-
 $n = 0
 foreach ($s in Get-Skills $Repo) {
     $src = Join-Path $Local $s
@@ -83,32 +64,11 @@ foreach ($s in Get-Skills $Repo) {
         continue
     }
     $parent = Split-Path (Join-Path $Repo $s) -Parent
-    Copy-Item -LiteralPath $src -Destination $parent -Recurse -Force
+    Copy-Item -Path $src -Destination $parent -Recurse -Force
     Write-Host "    [備份] $s" -ForegroundColor Green
     $n++
 }
-
 Write-Host ''
 Write-Host "  完成，備份 $n 個。" -ForegroundColor Yellow
-
-if ($Auto) {
-    Push-Location (Split-Path $Repo -Parent)
-    $changed = git status --porcelain skills/ 2>$null
-    if ($changed) {
-        git add skills/ 2>&1 | Out-Null
-        $msg = "skill 自動備份 " + (Get-Date -Format 'yyyy-MM-dd HH:mm')
-        git commit -q -m $msg 2>&1 | Out-Null
-        git push -q 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host '  [OK] 已 commit 並 push' -ForegroundColor Green
-        } else {
-            Write-Host '  [!] push 失敗（可能沒網路），下次會補上' -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host '  沒有變更，不用 push。' -ForegroundColor DarkGray
-    }
-    Pop-Location
-} else {
-    Write-Host '  要納入新 skill：跑 .\_sync.ps1 -Auto，或手動複製進來。' -ForegroundColor DarkGray
-}
+Write-Host '  要納入新的 skill：先手動複製一份到這個資料夾，之後就會自動同步。' -ForegroundColor DarkGray
 Write-Host ''
