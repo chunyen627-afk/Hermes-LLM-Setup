@@ -151,7 +151,20 @@ ELF="<專案>/STM32CubeIDE/Appli/Debug/Template_XIP_Appli.elf"
 原因：交換後把繪圖目標指到「正在顯示」的那塊，雙緩衝等於失效
 解法：用紙筆把狀態機跑幾格，確認「顯示的」和「繪製的」永遠相反。
 
-**PSRAM 要設成 write-through**，而且**開機是隨機內容**（要先清）。
+**PSRAM 要設成 NON-CACHEABLE**（不是 write-through），而且**開機是隨機內容**（要先清）。
+
+⚠ **write-through 不夠** —— write-through cacheable STILL allocates D-Cache lines.
+If both CPU (px() writes) and DMA2D (fills) write to the same PSRAM region,
+CPU writes allocate cache lines that later get written back over fresh pixels
+DMA2D just drew → scattered noise dots / ghosting (looks like "horizontal bars
+of coloured dot noise"). Fix: make the EXTRAM MPU region **NON-CACHEABLE +
+NOT-BUFFERABLE** in `MPU_Config()` (main.c). This is the cleanest solution for
+any project where CPU and DMA2D both draw to PSRAM. Performance cost is
+negligible for dirty-rectangle updates (a few KB/frame of CPU writes).
+
+⚠ **Don't call `HAL_MPU_Disable()` in your own framebuffer MPU init** — it
+wipes ALL regions main.c set up, and `HAL_MPU_Enable()` re-activates them all.
+Instead, modify the EXTRAM region directly in `MPU_Config()`.
 
 **直立顯示要自己做旋轉** —— 面板是實體 800×480 橫向，
 要 480×800 直立就得在繪圖層轉。
