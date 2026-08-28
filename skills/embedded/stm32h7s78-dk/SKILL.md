@@ -98,6 +98,40 @@ bootloader → 內部 Flash（只需第一次）
 應用程式   → 外部 Flash，必須指定 external loader
 ```
 
+**可直接複製的燒錄指令**（實測會動的版本，git-bash）：
+
+```bash
+CLI="C:/ST/STM32CubeIDE_2.0.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.win32_2.2.300.202508131133/tools/bin/STM32_Programmer_CLI.exe"
+EL="C:/ST/STM32CubeIDE_2.0.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.win32_2.2.300.202508131133/tools/bin/ExternalLoader/MX66UW1G45G_STM32H7S78-DK.stldr"
+ELF="<專案>/STM32CubeIDE/Appli/Debug/Template_XIP_Appli.elf"
+
+"$CLI" -c port=SWD mode=UR -el "$EL" -w "$ELF" -v
+```
+
+⚠ **三個一定要注意的點**（2026-08-28 實測踩到）：
+
+1. **燒 `.elf` 不要燒 `.bin`** —— ELF 自帶位址資訊，不用手寫 `0x70000000`。
+   用 `.bin` 就必須自己給位址，寫錯或漏了都不會報錯，只是沒燒進去。
+
+2. **`-el` 不能漏** —— 漏了會看到 `Flash size : 64 KBytes (default)`，
+   那是**內部** Flash 的大小。外部 Flash 的寫入等於沒發生，
+   但 CLI **不會報錯**，你會以為成功了。
+   看到 64 KBytes 就知道外部載入器沒生效。
+
+3. **`mode=UR`（Under Reset）燒錄用這個** —— 跟「讀記憶體用 mode=0」不衝突：
+   燒錄要 halt 住 CPU 才能寫 flash，讀變數則不能 halt（否則永遠讀到初始值）。
+   讀取用：`-c port=SWD mode=0 -hardRst -r32 <addr> <bytes>`
+   （`-r32` 的 count 是**位元組數**，讀 4 個 32-bit 變數要給 16）
+
+**燒完怎麼確認真的進去了**：
+
+```bash
+# 讀外部 flash 第一個字，應該是你的初始 SP（通常 0x20001000 之類）
+"$CLI" -c port=SWD mode=0 -r32 0x70000000 4
+```
+
+值不對就是沒燒進去，不要往下做。
+
 ---
 
 ## 二、LTDC 顯示（這裡的坑最多）
