@@ -136,6 +136,36 @@ Invoke-RestMethod http://127.0.0.1:1234/v1/models
 
 ---
 
+## 步驟 6.5：clangd（強烈建議）
+
+Serena（程式碼符號索引）靠 LSP 運作，**C/C++ 需要 clangd**。
+沒裝的話模型只能一次讀整個 `.c` 檔，context 消耗差好幾倍：
+
+| | 讀整檔 | 符號查詢 |
+|---|---|---|
+| 一個 800 行的 gfx.c | 5,700 字元 | **400 字元** |
+
+下載：https://github.com/clangd/clangd/releases
+（挑 `clangd-windows-*.zip`，約 26MB）
+
+解壓到 `C:\Users\<你>\dev\`，把 `clangd_*\bin` 加進使用者 PATH：
+
+```powershell
+$bin = 'C:\Users\<你>\dev\clangd_22.1.6\bin'
+[Environment]::SetEnvironmentVariable('Path',
+  [Environment]::GetEnvironmentVariable('Path','User') + ";$bin", 'User')
+```
+
+**驗證**：`clangd --version`
+
+⚠ **裝完要重開 Hermes** —— Serena 在啟動時才偵測 language server，
+跑到一半裝沒有用。
+
+其他語言同理（Kotlin 要 kotlin-language-server、Python 要 pyright），
+Serena 沒有自帶，都得自己裝進 PATH。
+
+---
+
 ## 步驟 7：還原 skill
 
 ```powershell
