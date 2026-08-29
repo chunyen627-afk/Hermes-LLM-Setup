@@ -4982,8 +4982,9 @@ _NO_SEARCH_RE = re.compile(
     r"^\s*(你好|哈囉|嗨|hi|hello|早安|午安|晚安|謝謝|感謝|thanks|"
     r"掰掰|再見|bye|ok|好的|嗯|哈哈|笑死)\s*[!?。！？~～]*\s*$",
     re.I)
-# 純算式（1+1、23*4 之類）
-_MATH_RE = re.compile(r"^[\s\d\+\-\*/×÷\.\(\)=?？等於多少是]+$")
+# 句子裡有算式就當作數學題（不要求整句都是算式 ——
+# '1+1 等於多少？只回數字' 這種原本會漏掉，白跑一輪推理）
+_MATH_RE = re.compile(r"\d\s*[\+\-\*/×÷]\s*\d")
 
 
 def _obviously_no_search(q):
@@ -4993,7 +4994,7 @@ def _obviously_no_search(q):
     s = q.strip()
     if _NO_SEARCH_RE.match(s):
         return True
-    if len(s) <= 20 and _MATH_RE.match(s):
+    if len(s) <= 40 and _MATH_RE.search(s):
         return True
     # 「翻譯成英文」「幫我寫一段 python」這類明顯是生成任務
     if re.search(r"(翻譯|translate|幫我寫|寫一[個段支]|改寫|潤稿|取個名字)", s):
