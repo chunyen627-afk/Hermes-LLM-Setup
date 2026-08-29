@@ -27,6 +27,108 @@ other + verify your measurement tool first.
 
 ---
 
+## 一之二、寫的是「硬體」不是「程式」
+
+模擬跑得過不代表做得出來。下面這些不是風格偏好，是**合成器接不接受**的問題。
+
+### 只用可合成的子集
+
+RTL 檔案裡出現這些就是錯的（它們只能待在 testbench）：
+
+```
+$display / $fopen / $fscanf / $finish / $time / $random
+#10（延遲）/ initial（除了 FPGA 的暫存器初值）
+real / time / event
+while / forever
+迴圈邊界不是常數：for (i = 0; i < n; ...) 其中 n 是 wire
+除法 a/b、取模 a%b（除非除數是 2 的冪，那會變成移位）
+```
+
+**寫完自己 grep 一遍**：
+```bash
+grep -nE '\$display|\$f(open|scanf|close)|\breal\b|#[0-9]|forever|while *\(' rtl/*.v
+```
+有命中就是把測試碼寫進 RTL 了。
+
+### 組合邏輯的長度是有代價的
+
+`always @*` 寫起來最快，但**整條路徑要在一個 clock 內走完**。
+典型的長路徑：桶形移位器 → 加法 → 前導零偵測（優先編碼器）→ 正規化移位 → 捨入。
+把這些串在一個 `always @*` 裡，在 100MHz 等級的目標頻率下**很可能收不了時序**。
+
+**做法**：先用純組合把**功能**做對（好除錯、好比對），
+確認 bit-exact 之後再切 pipeline —— 切 pipeline 不會改變數值結果，
+只是把同一條路徑分到多個 cycle。
+
+**切在哪**：找那條路徑上「資料要重新排列」的點，通常是
+`對齊移位之後` / `加法之後、正規化之前` / `捨入之前`。
+IEEE-754 加法器業界常見是 2-3 級。
+
+⚠ 一旦切了 pipeline，介面就從「組合」變成「有延遲」——
+testbench 要跟著改（等 N 拍才取結果），或加 valid/ready 交握。
+**別在還沒驗證功能之前就切**，否則同時 debug 數值和時序兩件事。
+
+### 幾個會讓合成結果爆掉的寫法
+
+- **大範圍的 `for` 迴圈做優先編碼**：`for (i = 47; i >= 0; i = i - 1)` 找前導 1，
+  會展開成 48 級串接。功能對，但面積和延遲都很糟。
+  合成友善的寫法是分層（先看高 16 bit 有沒有 1，再往下細分）或用 `casez`。
+  **但這是最佳化，不是正確性** —— 先做對再說。
+- **在 `always @*` 裡對同一個變數多次賦值**：模擬時是「後面蓋前面」，
+  合成時會變成一串多工器。邏輯上等價，但意圖不明確、容易寫出 latch。
+- **`always @*` 裡有分支沒賦值** → **推出 latch**，這是最常見的合成災難。
+  每個輸出在所有路徑上都要有值（開頭先給預設值最保險）。
+
+### 目標平台的算術資源
+
+- Xilinx UltraScale+ 的 **DSP48E2 是定點的**（27×18 乘法）。
+  浮點乘法要嘛用多個 DSP 拼、要嘛用 LUT，**面積差很多**。
+  BF16/FP32 的乘加陣列要先估「一個 PE 吃幾個 DSP」，才知道能開多少 PE。
+- **記憶體不是無限的**：權重放 BRAM 還是外部 DDR，決定整個資料流架構。
+  LLM 推理是 memory-bound（算術強度只有 ~2 FLOP/byte），
+  **加速器再快，權重餵不進來就沒用** —— 先算頻寬再設計算力。
+
+---
+
+### Verilog 語法：這幾個錯誤會反覆出現（2026-08-29 一輪內撞了十幾次）
+
+都是 Icarus 實際吐出來的訊息，錯誤文字跟原因常常對不起來：
+
+**`Part select expressions must be constant`**
+**`A reference to a wire or reg ('sh') is not allowed in a constant expression`**
+```verilog
+x[sh-1:0]        // ✗ 位寬要編譯期算得出來
+x[(-t)[5:0]]     // ✗ 對運算式做 part-select 更不行
+```
+```verilog
+x[sh +: 8]                       // ✓ 起點可變、寬度固定
+wire [5:0] nsh = -t;  x[nsh]     // ✓ 先存進 wire 再選
+```
+**寬度必須是常數，起點可以是變數** —— 用 `+:` / `-:` 語法。
+
+**`No function named 'foo' found in this context`**
+Verilog-2001 的 `function` 是**模組區域的**。在 module A 裡宣告，
+module B（包括 testbench）看不到。要共用就 `include` 同一個檔，
+或改寫成 module 實例。錯誤訊息說「找不到」，但檔案裡明明有 —— 是作用域問題。
+
+**`'foo' has already been declared in this scope`**
+同一個 `function` 定義了兩次，通常是複製貼上或 patch 沒對齊留下重複。
+**改動大時用 `read_file` 確認現況，不要憑印象疊 patch**。
+
+**`Unable to elaborate r-value: (cond) ? f(x) : ...`**
+三元運算子裡呼叫 function，而那個 function 在該處還無法展開。
+拆成兩行：先算出兩個候選值存進 wire，再用三元選。
+
+**`sorry: break statements not supported`**
+Icarus 不支援 `break`。迴圈要提早結束就用旗標變數 + 有界計數，
+順便當 hang guard（DUT 壞掉時不會無限等）。
+
+**`port 'x' is not a port of dut_add`**
+改了 module 的 port 清單但沒同步改實例化。
+**改介面時，module 定義和所有實例化處要一起改**。
+
+---
+
 ## 二、驗證方法：三層獨立檢查
 
 **Don't trust a single checker.** One in-sim self-check can share a bug with
@@ -51,6 +153,34 @@ the DUT. Use three paths that fail independently:
 
 All three agree → done. Disagreement localizes the bug (DUT vs checker vs your
 sampling math).
+
+### ⚠ 「PASS」之前先確認測試真的跑了
+
+2026-08-29 踩到：testbench 印出
+```
+f32_mul : 0 checked, 0 mismatches
+f32_add : 0 checked, 0 mismatches
+RESULT: PASS
+```
+**一個案例都沒跑，但結果是 PASS。** 原因是產生測試向量的腳本沒真的寫入
+（檔案 0 byte），`$fscanf` 讀不到東西，迴圈一次都沒進去。
+重新產生向量之後真相是 20200 筆錯 12841 筆。
+
+**規則：任何 PASS 都要附帶「跑了幾個案例」，而且那個數字要自己確認合理。**
+```verilog
+$display("%s : %0d checked, %0d mismatches", name, n_checked, n_bad);
+if (n_checked == 0) begin
+    $display("ERROR: no vectors were checked");  // 0 筆 = 失敗，不是通過
+    $finish(1);
+end
+```
+產生向量之後也要**先看檔案大小和行數**再跑模擬：
+```bash
+python gen_vectors.py && wc -l vectors/*.txt
+```
+
+這跟「`0 × 0 = 0` 通過不代表任何事」是同一類錯誤 ——
+**聚合數字會把「什麼都沒發生」偽裝成「一切正常」**。
 
 ---
 
@@ -93,6 +223,12 @@ sampling math).
   each frame from the raw word stream (header bit → id/len, then N data words),
   comparing id/word-count/checksum against the consumer's reports. A trailing
   in-progress frame at `$finish` is expected — exclude it, don't fail on it.
+- **Testbench stimulus race: don't toggle a control in the same timestep the DUT samples it.**
+  `start=1; @(posedge clk); start=0;` sets `start` high *before* the posedge and low *in the
+  same timestep* — the DUT's `always @(posedge clk)` may see `start` as 0 (NBA ordering), so the
+  transfer silently never starts and you get a "no_done" hang with no error. Drive stimulus
+  **between** edges: `@(posedge clk); #1 start=1; @(posedge clk); #1 start=0;`. Same for any
+  backpressure signal (`bp_busy`) — update it `#1` after the posedge, not before.
 
 ### 算術電路 (2026-08-29, Booth radix-4 乘法器)
 
