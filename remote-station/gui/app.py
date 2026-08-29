@@ -4943,7 +4943,126 @@ def _expand_urls(text):
 
 SIMPLE_UPSTREAM = "http://127.0.0.1:1234/v1/chat/completions"
 SIMPLE_MODEL = "qwen38_mtp"
-SIMPLE_SYSTEM = "你是一個友善的助理。用繁體中文回答，簡潔清楚。"
+SIMPLE_SYSTEM = (
+    "你是一個友善的助理。用繁體中文回答，簡潔清楚。\n"
+    "\n"
+    "你有這些能力，不要說自己沒有：\n"
+    "- 看圖：使用者附圖時你看得到，直接描述你看到的內容。\n"
+    "- 上網查資料：需要即時或不確定的資訊時，系統會自動幫你查好，\n"
+    "  再把結果附在問題前面。看到【網路搜尋結果】就依那些資料回答。\n"
+    "- 讀網頁：使用者貼網址時，內容會自動抓回來附在問題裡。\n"
+    "\n"
+    "沒有拿到搜尋結果、又不確定答案時，就說不知道，不要編。"
+)
+
+# ===== 網路搜尋（後端代查，不給模型工具呼叫權）=====
+# 家人介面是一問一答的簡化版，刻意不讓模型能執行指令或動檔案。
+# 所以搜尋由後端做：先問模型要不要查，要查就跑 ddgs 把結果塞進 prompt。
+SEARCH_MAX_RESULTS = 6      # 抓幾筆搜尋結果
+SEARCH_FETCH_PAGES = 2      # 其中幾筆要真的抓內文（其餘只用摘要）
+SEARCH_DECIDE_TIMEOUT = 120
+
+_SEARCH_DECIDE_PROMPT = (
+    "判斷下面這個問題需不需要查網路才能正確回答。\n"
+    "需要查的情況：即時資訊（新聞、股價、天氣、比分）、特定產品或服務的細節、"
+    "你不確定或可能記錯的事實、最近發生的事。\n"
+    "不需要查的情況：閒聊、翻譯、算數學、寫程式、解釋常識概念、"
+    "你有把握的知識。\n\n"
+    "只回一行，格式二選一：\n"
+    "NO\n"
+    "YES|要搜尋的關鍵字\n\n"
+    "關鍵字要精簡（不超過 10 個字），用最容易搜到答案的講法。\n\n"
+    "問題："
+)
+
+
+# 明顯不用查網路的，直接跳過「問模型要不要查」那一輪推理（省 30-60 秒）。
+# 只擋很有把握的，其餘一律交給模型判斷 —— 寧可多查也不要漏查。
+_NO_SEARCH_RE = re.compile(
+    r"^\s*(你好|哈囉|嗨|hi|hello|早安|午安|晚安|謝謝|感謝|thanks|"
+    r"掰掰|再見|bye|ok|好的|嗯|哈哈|笑死)\s*[!?。！？~～]*\s*$",
+    re.I)
+# 純算式（1+1、23*4 之類）
+_MATH_RE = re.compile(r"^[\s\d\+\-\*/×÷\.\(\)=?？等於多少是]+$")
+
+
+def _obviously_no_search(q):
+    """明顯不用查網路就回 True。判斷不了就回 False（交給模型）。"""
+    if not q or len(q.strip()) < 2:
+        return True
+    s = q.strip()
+    if _NO_SEARCH_RE.match(s):
+        return True
+    if len(s) <= 20 and _MATH_RE.match(s):
+        return True
+    # 「翻譯成英文」「幫我寫一段 python」這類明顯是生成任務
+    if re.search(r"(翻譯|translate|幫我寫|寫一[個段支]|改寫|潤稿|取個名字)", s):
+        return True
+    return False
+
+
+def _should_search(question):
+    """問模型這題要不要查網路。回傳搜尋關鍵字，不用查就回 None。"""
+    if _obviously_no_search(question):
+        return None
+    try:
+        r = requests.post(SIMPLE_UPSTREAM, json={
+            "model": SIMPLE_MODEL,
+            "messages": [{"role": "user",
+                          "content": _SEARCH_DECIDE_PROMPT + question}],
+            "max_tokens": 60,
+            "temperature": 0.1,
+            "stream": False,
+        }, timeout=SEARCH_DECIDE_TIMEOUT)
+        r.raise_for_status()
+        out = (r.json()["choices"][0]["message"].get("content") or "").strip()
+    except Exception:
+        return None          # 判斷失敗就當作不用查，不要卡住回答
+
+    line = out.splitlines()[0].strip() if out else ""
+    if not line.upper().startswith("YES"):
+        return None
+    _, _, kw = line.partition("|")
+    kw = kw.strip().strip('"\'')
+    return kw or question[:40]
+
+
+def _web_search(keyword):
+    """跑 ddgs 搜尋，回傳整理好的文字。查不到就回 None。"""
+    try:
+        from ddgs import DDGS
+    except Exception:
+        return None
+    try:
+        with DDGS() as d:
+            hits = list(d.text(keyword, max_results=SEARCH_MAX_RESULTS))
+    except Exception as e:
+        return "【搜尋失敗】" + str(e)[:80]
+    if not hits:
+        return None
+
+    blocks = []
+    for i, h in enumerate(hits, 1):
+        title = (h.get("title") or "").strip()
+        body = (h.get("body") or "").strip()
+        href = (h.get("href") or "").strip()
+        blocks.append("%d. %s\n   %s\n   %s" % (i, title, body, href))
+
+    # 前幾筆再抓實際內文，摘要常常太短講不清楚
+    for h in hits[:SEARCH_FETCH_PAGES]:
+        href = (h.get("href") or "").strip()
+        if not href:
+            continue
+        try:
+            title, text = _fetch_url_text(href)
+            if text:
+                blocks.append("【內文】%s\n來源：%s\n\n%s"
+                              % (title or "", href, text))
+        except Exception:
+            pass
+
+    return "\n\n".join(blocks)
+
 
 
 @app.route("/chat")
@@ -4980,6 +5099,22 @@ def api_simple_send():
             expanded, n_url = _expand_urls(last["content"])
             if n_url:
                 last["content"] = expanded
+
+    # 沒有貼網址、也沒有附圖時，問模型這題要不要查網路。
+    # 有網址就不用查（已經抓回內容了）；有圖的話問題通常是關於圖本身。
+    if (not n_url) and (not img) and payload_msgs \
+            and payload_msgs[-1]["role"] == "user" \
+            and isinstance(payload_msgs[-1]["content"], str):
+        q = payload_msgs[-1]["content"]
+        kw = _should_search(q)
+        if kw:
+            found = _web_search(kw)
+            if found:
+                payload_msgs[-1]["content"] = (
+                    "【網路搜尋結果】關鍵字：" + kw + "\n\n" + found
+                    + "\n\n---\n\n請根據上面的搜尋結果回答。"
+                      "資料裡沒提到的就說不知道，不要自己編。\n\n"
+                      "使用者的問題：" + q)
 
     # 有圖就用 OpenAI 的多模態格式，橋接器會攔下來送 Gemini
     if img and payload_msgs:
