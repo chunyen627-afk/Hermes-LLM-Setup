@@ -22,10 +22,23 @@ values from a `.vcd` without GTKWave/matplotlib.
 
 ## Body parsing
 
-- Body starts after `$enddefinitions$`.
+- **Icarus writes the header terminator as `$enddefinitions $end` (with a space),
+  NOT `$enddefinitions$`.** Split with `i = text.find("$enddefinitions");
+  j = text.find("$end", i + len("$enddefinitions"))` — searching from `i` itself
+  re-matches the keyword's own tail and truncates the header to zero vars.
+- **Icarus's body is FLAT: no `$scope`/`$upscope` markers in it.** Don't bother
+  tracking scope in the body; a single global `code -> name` map from the header
+  resolves every value change. (Codes that collide across scopes are instances
+  of the same net — same value, so a first-wins dict is fine.)
 - Time stamps: lines starting with `#` followed by an integer (in timescale units).
 - Value changes: `<value><code>` where value is `0`/`1`/`x`/`z` or `b<bits>`.
   A line can contain multiple changes; tokenize left-to-right.
+- **Initial-value blocks (`$dumpall`/`$dumpvars`) emit `bx <code>`** — x values.
+  Guard `int(bits, 2)` against `x`/`z` or the parser crashes on the first line.
+- **A `b<bits>` token can END in a digit code.** E.g. signal `i` (code `1`) with
+  value 5 is written `b101 1`. Read all `01xz` chars after `b`, skip spaces, take
+  the next char as the code; if that char isn't a known code, the LAST char of
+  the bit run IS the code and the bits are the run minus its last char.
 - **File is CRLF** on Windows. `.strip()` each line before processing.
 
 ## Timescale trap

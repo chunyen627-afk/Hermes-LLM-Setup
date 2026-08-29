@@ -21,7 +21,7 @@ related_skills: [hardware-design-tradeoffs, rtl-sim-verification, embedded-ui-ve
 | FPGA | **Virtex UltraScale+ XCVU9P**（`xcvu9p-flga2104-2L-e`）|
 | 邏輯單元 | 約 2.5M |
 | DSP | 6,840 |
-| 記憶體 | 板載 DDR4（未確認容量與 part number）|
+| 記憶體 | 板載 **dual 80-bit DDR4**（兩組 80-bit 介面；MIG 產生的 AXI 資料寬度未確認，本機無 Vivado —— 推測 256-bit，上板前用 MIG 輸出驗證）|
 | 介面 | PCIe Gen3 x16、QSFP28 ×4、USB-UART、FMC+ |
 | 燒錄 | 板載 Digilent USB-JTAG |
 
