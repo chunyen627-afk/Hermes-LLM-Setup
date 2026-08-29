@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 61c2c266-cae7-4af3-b4fe-cdbf6c231042
-  modified: 2026-08-29T02:37:41.300Z
+  modified: 2026-08-29T05:45:31.099Z
 ---
 
 2026-08-29 把 Qwen3.8-27B 的視覺打開，**ctx 完全不用犧牲**。
@@ -15,11 +15,24 @@ metadata:
 **不需要換非 GGUF**：mmproj 就是原生 ViT + projector 本體（不是「文字描述」），
 而且 GGUF 的 mmproj 是 **BF16 未量化**，精度比 bnb-4bit 那種整包量化的還高。
 
-**三個必要條件，缺一不可**：
+**四個必要條件，缺一不可**：
 
 1. `_ensure_38.ps1` 掛 `--mmproj`（0.87GB）+ `--image-min-tokens 1024`
 2. **`--tensor-split` 從 `8,12,10` 改成 `6,13,13`** ← 關鍵
-3. **Hermes `auxiliary.vision` 從 vertex 改成 lmstudio/qwen38_mtp** ← 最容易漏
+3. **Hermes `auxiliary.vision` 從 vertex 改成 lmstudio/qwen38_mtp**
+4. **`hermes_bridge.py` 的 `STRIP_IMAGES = False`，而且改完要重啟橋接器** ← 最容易漏
+
+第 4 點踩過：橋接器有個 `_strip_images()` 會把圖片**整個抽掉**換成 Gemini 的文字描述
+（mmproj 之前的權宜之計）。前三項都做了但沒重啟橋接器，記憶體裡跑的還是舊碼，
+結果 mmproj 等於白掛、圖根本到不了模型眼前，還照樣燒 Gemini 額度。
+
+**怎麼分辨圖有沒有真的到模型眼前**（都是實測過的判別法）：
+- 走 Gemini：回覆以 `Analysis:` 開頭，是包裝過的描述
+- 拿一張你知道答案的圖去問**視覺才答得出來的問題**（背景是深色還是白色？
+  某一欄有沒有畫出東西？）。走 Gemini 那次答「white canvas」但圖是深色底，
+  還描述了不存在的波形；本地視覺答「深藍灰/炭黑色」且正確指出
+  「只有 clk/start/done 有波形，其餘五欄空白」。
+- `prompt_tokens` 要接近 1024 以上（圖片 token）
 
 第 2 點：mmproj 是**最後才配置**的，原本比例會讓 device0（3070 8GB）剛好塞不下
 → `cudaMalloc failed: out of memory`，錯誤訊息裡的 931127936 bytes 就是 mmproj 大小。

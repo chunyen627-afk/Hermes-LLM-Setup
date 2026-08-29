@@ -6,6 +6,13 @@ UP = f'http://{GPU}:8001'
 # 每幾次推論印一行 context 用量；傳 0 可關掉。
 # 用次數不用秒數 —— 閒著的時候不該一直洗版面，有在跑才需要看 ctx。
 WATCH = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+# 單輪輸出上限，防止模型卡在自我重複時燒掉幾十分鐘 GPU。
+# 正常回合幾百到幾千 token 就夠，8192 綽綽有餘。
+MAX_OUT = 8192
+# 圖片是否要先繞道 Gemini 轉成文字。模型掛了 mmproj 之後應該是 False，
+# 否則圖會在這裡被抽掉，本地視覺等於沒開。
+STRIP_IMAGES = False
+_TOOLS_REPORTED = False
 
 # Hermes 會探測這些 Ollama / LM Studio 風格的端點，llama-server 沒有這些路徑。
 # 直接回空清單，不往上游打，也不印紅字。
@@ -210,8 +217,13 @@ class B(http.server.BaseHTTPRequestHandler):
             return
         is_infer = 'chat/completions' in self.path or 'messages' in self.path
 
-        # 圖片先給 Gemini 轉成文字，本地模型只收得到純文字
-        if is_infer and body:
+        # 2026-08-29 起模型自己有眼睛（mmproj 掛上，/props 回報 vision:true），
+        # 圖片直接原樣轉發給 llama-server，不再繞道 Gemini。
+        # 舊行為（_strip_images 把圖換成 Gemini 的文字描述）是 mmproj 之前的
+        # 權宜之計 —— 留著的話 mmproj 等於白掛，圖根本到不了模型眼前。
+        # 實測 27B 自己看波形圖比 Gemini 準（4 題對 3.5 vs 對 2）。
+        # 若哪天拿掉 mmproj，把 STRIP_IMAGES 改回 True 就能退回舊行為。
+        if STRIP_IMAGES and is_infer and body:
             try:
                 body, n_img = _strip_images(body)
                 if n_img:
@@ -225,8 +237,28 @@ class B(http.server.BaseHTTPRequestHandler):
         if is_infer and body:
             try:
                 j = json.loads(body)
+                changed = False
+                # 每次啟動報一次工具定義的固定成本。disabled_toolsets 名稱
+                # 寫錯會靜默失效，看這行數字有沒有變才知道設定真的生效。
+                global _TOOLS_REPORTED
+                if not _TOOLS_REPORTED and j.get('tools'):
+                    tj = json.dumps(j['tools'], ensure_ascii=False)
+                    print('[tool] %d 個工具定義，%d 字元（約 %d tokens/每輪固定成本）'
+                          % (len(j['tools']), len(tj), len(tj) // 4), flush=True)
+                    _TOOLS_REPORTED = True
                 if j.get('stream') and 'stream_options' not in j:
                     j['stream_options'] = {'include_usage': True}
+                    changed = True
+                # 單輪輸出上限。Hermes 預設送 max_tokens=65536，而 OpenAI 相容端點的
+                # max_tokens 會「覆蓋」llama-server 的 --n-predict（不是取較小值），
+                # 所以只能在這裡攔。2026-08-29 踩到：一個開放式題目讓模型連續生成
+                # 2.5 萬 token 都不呼叫工具（卡在自我重複），還剩 4.2 萬額度。
+                # 殺客戶端沒用 —— server 不知道對方斷線，會一路吐完，最後只能重啟。
+                mt = j.get('max_tokens')
+                if not isinstance(mt, int) or mt > MAX_OUT:
+                    j['max_tokens'] = MAX_OUT
+                    changed = True
+                if changed:
                     body = json.dumps(j).encode()
             except Exception:
                 pass
