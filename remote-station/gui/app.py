@@ -1100,6 +1100,7 @@ def _build_context_prefix(sid, max_chars=16000):
     return full
 
 
+# 只從環境變數讀，不要寫死 —— 這支檔案會同步到公開倉庫。
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
 VISION_PS1 = r"C:\Users\pjunm\OneDrive\Desktop\hermes\_ensure_vision_port_8002.ps1"
@@ -1130,12 +1131,15 @@ def _vision_gemini(image_base64, msg):
 
 
 def _vision_local(sid, image_base64, msg):
-    """備援：本機 Qwen2-VL-2B（另開 :8002，會多吃約 2.3GB VRAM）。"""
-    _push_event(sid, {"type": "status", "text": "改用本機看圖模型 (Qwen2-VL)..."})
-    subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", VISION_PS1],
-                   check=True)
+    """本機 27B 自己看圖（走 :1234 橋接器）。
+
+    2026-08-29 起主模型掛了 mmproj，自己就有視覺，不用另開 Qwen2-VL-2B，
+    也不多吃 VRAM。實測比 Gemini 準（同一張波形圖，Gemini 說白底、還描述了
+    不存在的波形；27B 正確答出深色底與哪幾欄有畫出來）。
+    """
+    _push_event(sid, {"type": "status", "text": "本機看圖中 (27B)..."})
     payload = {
-        "model": "qwen2-vl-2b",
+        "model": "qwen38_mtp",
         "messages": [{"role": "user", "content": [
             {"type": "text",
              "text": "請把圖片內容轉成詳盡的純文字描述。使用者的指示：\n" + msg},
@@ -1144,29 +1148,39 @@ def _vision_local(sid, image_base64, msg):
         "max_tokens": 1500,
         "temperature": 0.2,
     }
-    r = requests.post("http://127.0.0.1:8002/v1/chat/completions",
-                      json=payload, timeout=60)
+    r = requests.post("http://127.0.0.1:1234/v1/chat/completions",
+                      json=payload, timeout=180)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
 
 def _parse_image_with_vlm(sid, image_base64, msg):
-    """解析圖片成文字描述。先走 Gemini，失敗才退回本機模型。
+    """解析圖片成文字描述。先走本機 27B，失敗才退回 Gemini。
 
-    為什麼優先用雲端：主模型跑 2 個 slot 各 120K ctx，VRAM 只剩不到 1GB，
-    再開本機視覺模型會爆。Gemini 免費層不佔任何本機資源，品質也更好。
+    2026-08-29 把順序倒過來（原本是 Gemini 優先）：主模型掛了 mmproj 之後
+    自己就有視覺，不用另開視覺模型也不多吃 VRAM，而且實測比 Gemini 準
+    —— 同一張深色底、幾乎全空白的波形圖，Gemini 說是 "white canvas" 還
+    描述了不存在的波形，27B 正確答出背景色與哪三欄有畫出來。
+    走本機還不燒 Gemini 免費額度（20 次/天/模型）。
+
+    ⚠ 本機看圖需要 llama-server 跑 2 slot。1 slot 時視覺請求得排隊等主任務，
+    實測 900 秒都等不到；2 slot 下 21.9 秒完成。
     """
     try:
-        _push_event(sid, {"type": "status", "text": "解析圖片中 (Gemini)..."})
-        desc = _vision_gemini(image_base64, msg)
+        _push_event(sid, {"type": "status", "text": "解析圖片中 (本機 27B)..."})
+        desc = _vision_local(sid, image_base64, msg)
         _push_event(sid, {"type": "status", "text": "圖片解析完成"})
         return desc
     except Exception as e:
         _push_event(sid, {"type": "status",
-                          "text": "Gemini 看圖失敗(" + str(e)[:60] + ")，改用本機模型"})
+                          "text": "本機看圖失敗(" + str(e)[:60] + ")，改用 Gemini"})
+        if not GEMINI_KEY:
+            _push_event(sid, {"type": "status",
+                              "text": "圖片解析失敗（沒設 GEMINI_API_KEY，無備援）"})
+            return "圖片解析失敗: " + str(e)
         try:
-            desc = _vision_local(sid, image_base64, msg)
-            _push_event(sid, {"type": "status", "text": "圖片解析完成（本機）"})
+            desc = _vision_gemini(image_base64, msg)
+            _push_event(sid, {"type": "status", "text": "圖片解析完成（Gemini）"})
             return desc
         except Exception as e2:
             _push_event(sid, {"type": "status",
@@ -1379,6 +1393,21 @@ def _run_claude_msg(sid, message, image_base64=None):
         "- 環境細節：路徑、指令、參數、版本號\n"
         "- 卡住的地方和目前的假設\n"
         "寫完繼續做，每有重大進展就更新。壓縮後或開新對話，第一件事讀這份。\n"
+        "\n"
+        "## 📚 動手前先掃 skill 索引\n"
+        "\n"
+        "**skill 索引在這份 prompt 的最後面**，那裡列了所有可用的 skill\n"
+        "（名稱 + 一行描述）。位置很尾巴，容易整塊略過——但那是你的知識庫。\n"
+        "\n"
+        "**開始任何實作任務之前，先掃一遍那份清單**：\n"
+        "- 名稱或描述沾得上邊的，用 `skill_view` 讀完再動手\n"
+        "- 裡面通常有「這台機器踩過的坑」和「可直接複製的指令」，\n"
+        "  比你自己重新摸索快很多\n"
+        "- 找不到相關的就直接做，不用勉強讀（讀不相關的只是浪費 context）\n"
+        "\n"
+        "**踩到新的坑就寫回去**：`skill_manage(action=\'patch\')`，\n"
+        "當場寫，不要等做完——那時 context 已經壓縮好幾輪，細節記不得了。\n"
+        "發現 skill 內容是錯的也一樣要當場改。\n"
         "\n"
         "## ✅ 說「完成」之前先問自己\n"
         "\n"
