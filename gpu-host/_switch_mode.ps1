@@ -25,7 +25,9 @@ $Port = 8001
 $Ensure = Join-Path $PSScriptRoot '_ensure_38.ps1'
 
 # 獨佔 204800：單 slot 時 KV cache 不用切兩份，可以塞更大。
-# 沒掛 mmproj（看圖走雲端），所以 VRAM 全給 context。
+# 2026-08-29 起有掛 mmproj（模型自己看圖，不再走雲端 Gemini）。
+# 視覺不用犧牲 ctx —— 關鍵是 --tensor-split 6,13,13 讓 3070 少扛，
+# 否則 888MiB 的 mmproj 會在 device0 OOM。實測 200K + 視覺 = 28.3/32.7 GB。
 # 共享的 245760 會被 --parallel 2 平分成每 slot 122,880。
 $MODES = @{
     solo  = @{ Slots = 1; Ctx = 204800; Desc = '獨佔 — 1 slot，ctx 200K 全給你' }

@@ -61,6 +61,9 @@ Hermes 桌面版  ──►  橋接器 :1234  ──►  llama-server :8001  ─
 這套環境用的是 `Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf`（約 16GB）。
 換別的模型也可以，但 `_ensure_38.ps1` 裡的檔名要跟著改。
 
+⚠ **視覺編碼器要另外下載**：`mmproj-Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-BF16.gguf`
+（約 0.87GB，跟主模型放同一個目錄）。沒有它模型就看不到圖 —— 見「步驟 3.5：視覺」。
+
 ---
 
 ## 步驟 3：GPU 主機腳本
@@ -79,6 +82,59 @@ $model = 'C:\...\hub\你的模型.gguf'                  # 步驟 2 的位置
 Invoke-RestMethod http://127.0.0.1:8001/v1/models
 ```
 應該回傳模型清單。
+
+---
+
+## 步驟 3.5：視覺（讓模型自己看圖）
+
+這個模型**原生就是多模態**，chat template 裡早就有 `<|vision_start|>`。
+但沒掛 mmproj 的話 `/props` 會回報 `vision: false`，看圖只能外送雲端。
+
+**不需要換非 GGUF 版本** —— mmproj 就是原生 ViT + projector 本體，
+而且是 BF16 未量化，精度比 bnb-4bit 那類整包量化的還高。
+
+需要**三個條件同時成立**，缺一就等於沒開：
+
+**1. 啟動參數**（`_ensure_38.ps1` 已內建，只要 mmproj 檔案在就會自動掛）
+```
+--mmproj <路徑>  --image-min-tokens 1024
+```
+`--image-min-tokens 1024` 不能省。llama.cpp 啟動時會警告 Qwen-VL 低於 1024
+image token 在 grounding 任務會失準 —— 實測預設只給 868，模型會把渲染雜點
+誤判成訊號跳變；提到 1277 之後它會自己說「那只是游標標記，不是訊號」。
+
+**2. `--tensor-split 6,13,13`**（不是舊的 `8,12,10`）
+
+mmproj 是**最後才配置**的。舊比例會讓 device0（3070 8GB）剛好塞不下，
+報 `cudaMalloc failed: out of memory`，錯誤訊息裡的 931127936 bytes
+就是 mmproj 的大小。改成 6,13,13 之後 **200K ctx + 視覺同時成立**
+（實測 28.3/32.7 GB），完全不用犧牲 context。
+
+**3. Hermes 的視覺路由**（最容易漏掉的一步）
+
+只改 llama-server 沒有用，Hermes 的 `vision_analyze` 工具**另有路由設定**，
+預設指向 Vertex/Gemini。不改的話照樣走雲端、照樣燒免費額度（20 次/天/模型）。
+
+```powershell
+& $hermes config set auxiliary.vision.provider lmstudio
+& $hermes config set auxiliary.vision.model qwen38_mtp
+```
+
+改完**桌面版要重開**才吃到（CLI 每次新進程會自動重讀）。
+
+**驗證**：
+```powershell
+(Invoke-RestMethod http://127.0.0.1:8001/props).modalities
+# 要看到 vision=True
+```
+
+**壓縮（compression）建議留在雲端** —— 它在 ctx 快滿時觸發，那時本地模型
+正扛著滿滿的 context，再要它做摘要會拖慢；而且壓縮品質決定壓完後還記不記得
+在做什麼。觸發頻率低，不太吃額度。
+
+⚠ **視覺不能單獨當驗證標準**：實測 27B 和 Gemini 兩個不同架構的模型，
+在同一張波形圖的同一個渲染雜點上犯了**一樣的錯**。圖要跟數字交叉比對，
+矛盾時以數字為準。
 
 ---
 
@@ -250,6 +306,16 @@ python app.py
 `1b-START-GPU-Server-THINK.bat` 是刻意保留的 high 模式，
 只適合「一個短的、真的很難的推理問題」，不要用在長任務。
 
+⚠ **兩邊都要設，不然會打架**。`_ensure_38.ps1` 的 `-Think low` 只是
+llama-server 的預設值，Hermes 每次請求會帶自己的 `reasoning_effort` 覆蓋它。
+Hermes 出廠是 `medium`，所以只改 server 端等於沒改：
+
+```powershell
+& $hermes config set agent.reasoning_effort low
+```
+
+設完就不用每次在 GUI 手動切了（`config.yaml` 第 26 行 `agent.reasoning_effort`）。
+
 ---
 
 ## 全部裝完後的自我檢查
@@ -266,6 +332,17 @@ Invoke-RestMethod http://127.0.0.1:1234/v1/models
 
 # 4. Hermes 設定沒問題
 & "$env:LOCALAPPDATA\hermes\hermes-agent\venv\Scripts\hermes.exe" config show
+
+# 5. 視覺開著（要看到 vision=True，不是 False）
+(Invoke-RestMethod http://127.0.0.1:8001/props).modalities
+
+# 6. 視覺走本地不是雲端（要是 lmstudio / qwen38_mtp）
+$h = "$env:LOCALAPPDATA\hermes\hermes-agent\venv\Scripts\hermes.exe"
+& $h config get auxiliary.vision.provider
+& $h config get auxiliary.vision.model
+
+# 7. 思考等級是 low（不用每次手動切）
+& $h config get agent.reasoning_effort
 ```
 
 然後開 Hermes，隨便問一句話。橋接器視窗會印

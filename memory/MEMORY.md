@@ -1,0 +1,38 @@
+- [Local LLM + Hermes rig](local-llm-hermes-rig.md) — Qwen3.6 35B-A3B on llama.cpp + Hermes, tri-GPU asymmetric VRAM, scripts on desktop
+- [llama.cpp tuning rules](llama-cpp-tuning-rules.md) — `-sm layer` > `-sm row` on asymmetric GPUs (5.5×), `-fa on` syntax, KV q8_0, Hermes sandbox trap
+- [Mobile remote GUI](mobile-remote-gui.md) — Flask :5000 + ZeroTier、4 模型切換、看圖+聯網對話、Claude Code 背景跑
+- [Claude Code kill trap](claude-code-kill-trap.md) — 絕對禁用 taskkill /F /IM claude.exe，會殺到桌面板 Claude
+- [PS1 encoding traps](ps1-encoding-traps.md) — UTF-8 必須有 BOM、CRLF、不能用 $args 變數名
+- [LLM VRAM budget](llm-vram-budget.md) — 32GB VRAM 4 模型的 ctx 配置表，避免 segfault
+- [Test prompts stay vague](feedback-test-prompts-stay-vague.md) — 替使用者發本地 LLM 測試訊息時 prompt 要白話、不指定技術細節，讓模型自己想
+- [WIN_RULES sync](reference-win-rules-sync.md) — 手機 Flask 的 WIN_RULES 改了要跑 _extract_rules.py 同步到電腦 CLAUDE.md
+- [LLM workflow philosophy](user-llm-workflow-philosophy.md) — 使用者「本地慢慢做、雲端 Claude 急件」的分工觀
+- [pptx_style helper](pptx-style-helper.md) — 裝在 Python311 + hermes venv 兩處，改主檔後要 cp 同步副本
+- [Shared assets library](shared-assets-library.md) — `_claude_workspace/shared_assets/` 28MB 素材庫（Kenney 圖+音、Juhani BGM、find_asset.py helper）
+- [27B training results](27b-training-results.md) — 規則訓練實戰成果（突破 700 行/單檔上限、寫完跑驗證、cp Kenney 音效）
+- [Flask GUI architecture](flask-gui-architecture.md) — 3 大區（chat/vision/file）、新 endpoint（/api/site/、/api/vision/img）、雙寫疊字 bug 修補
+- [Don't touch the test](feedback-dont-touch-the-test.md) — 跑 27B 測試時不要手癢替它寫 code、教規則就好
+- [SDXL dict hybrid](sdxl-dict-hybrid.md) — 中英字典秒翻 + 35B fallback 架構、擴充流程、政策邊界
+- [SDXL dict hands-off](feedback-sdxl-dict-handsoff.md) — 使用者自己加進字典的詞、Claude 一律不准主動改 / 刪 / 禁用
+- [SDXL rules effectiveness](sdxl-rules-effectiveness.md) — 7 條修圖規則效力評估、v46 預設「0011111」、ADetailer 砍剩只修手（臉/多人會換風格）、腳趾沒救走局部改圖、v47 加批次隨機生圖
+- [Claude Code remote control](claude-code-remote-control.md) — 開遠端用對話裡 `/remote-control`，不要做獨立 rc .bat（subcommand 模式跟 Headroom 撞）
+- [Qwen3.8 MTP config](qwen38-mtp-config.md) — 160K ctx 上限、MTP 接受率 84-88%（永遠開著）、chat template 必修的 raise_exception 雷
+- [單機集中](single-machine-only.md) — LLM 只在 office_open 跑，第二台走 ZeroTier 造成 slot 互搶（慢 13 倍）與斷線
+- [Hermes 桌面版四大坑](hermes-desktop-traps.md) — Vertex 出廠預設、session 凍結 provider、config 換位置、別用 git 版
+- [本地模型切換器](local-model-switcher.md) — 桌面「切換本地模型」捷徑，換 server 模型並同步 Hermes 設定
+- [Serena 符號索引](serena-code-index.md) — 省 ctx 用，只留 8 個工具，規則要改 WIN_RULES 不是 CLAUDE.md
+- [家人聊天入口](family-chat-access.md) — /chat 簡化頁面、橋接器 Gemini 看圖、對話歷史、2 slot 不互搶
+- [Skills context diet](skills-context-diet.md) — 規則拆 Skills 按需載入省 83%、description 決定命中率、45K 其實是工具定義
+- [STM32H7S78-DK 平台](stm32h7s78-dk-platform.md) — 板子架構、LTDC 閃爍、SWD mode=1 陷阱、UART4 腳位，開發前必讀
+- [俄羅斯方塊專案](stm32h7s78-tetris-repo.md) — GitHub 倉庫與本機路徑、測試方式
+- [Hermes ctx/slot 同步](hermes-ctx-slot-sync.md) — context_length 要等於每 slot 額度，不然壓縮永不觸發直接撞牆
+- [Slot 模式切換](slot-mode-switcher.md) — 桌面捷徑，獨佔 1 slot 200K / 共享 2 slot 各 120K
+- [llama context-shift](llama-context-shift.md) — 預設關閉會讓 ctx 滿時硬失敗，已加進啟動腳本；含壓縮救援手段的排除清單
+- [Vertex AI 設定](vertex-ai-setup.md) — 走 GCP 抵免額，model 必須帶 google/ 前綴否則 400
+- [Gemini 額度規則](gemini-quota-limits.md) — 免費 20 次/模型/天、升級後停用、看圖才是燒額度主因
+- [Android 開發環境](android-dev-env.md) — dev/ 底下的 JDK/SDK/Gradle，模擬器必須軟體渲染
+- [彈珠台專案成果](pinball-project-result.md) — 單元測試抓不到的機制缺陷、逐幀像素差分驗證法
+- [Skill 備份](skills-backup.md) — 自訂 skill 存 AppData 重灌會沒，備份在 Hermes-LLM-Setup/skills/
+- [Serena 要 LSP](serena-needs-lsp.md) — 沒裝 clangd 符號查詢無效，只能讀整檔差 93% ctx
+- [讀 skill ≠ 會用](skill-read-vs-applied.md) — 會主動讀但不一定採用裡面的方法，必要做法要寫進提示詞
+- [本地視覺開啟](local-vision-enabled.md) — mmproj + tensor-split 6,13,13 + Hermes 視覺路由，200K ctx 不用犧牲

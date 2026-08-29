@@ -45,7 +45,9 @@ Start-Sleep -Seconds 5
 $llama = 'C:\Users\pjunm\.unsloth\llama.cpp-b10435\llama-server.exe'
 $model = 'C:\Users\pjunm\.cache\huggingface\hub\Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf'
 
-if (-not (Test-Path $model)) {
+$mmproj = 'C:\Users\pjunm\.cache\huggingface\hub\mmproj-Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-BF16.gguf'
+
+if (-not (Test-Path -LiteralPath $model)) {
     Write-Host "[ERROR] Model not found: $model" -ForegroundColor Red
     exit 1
 }
@@ -71,7 +73,10 @@ $launchArgs = @(
     '--cache-type-k', 'q4_0',
     '--cache-type-v', 'q4_0',
     '--n-gpu-layers', '999',
-    '--tensor-split', '8,12,10',
+    # 6,13,13 而非 8,12,10：mmproj(888MiB) 最後才配置，原本的比例會讓
+    # device0 (3070 8GB) 剛好塞不下 -> cudaMalloc OOM。把負載推給兩張 3060
+    # 之後，200K ctx + 視覺同時成立（實測 28.3/32.7 GB）。
+    '--tensor-split', '6,13,13',
     '-sm', 'layer',
     '--batch-size', '2048',
     '--ubatch-size', '512',
@@ -95,6 +100,21 @@ $launchArgs = @(
 )
 $launchArgs += $reasonArgs
 $launchArgs += $sampleArgs
+
+# 視覺編碼器（ViT + projector），BF16 未量化 ~0.87GB。
+# 這份模型原生就是多模態，chat template 早就有 <|vision_start|>，
+# 只是先前沒掛 mmproj，所以 /props 回報 vision:false。
+# 2026-08-29 補上 —— 之前好幾輪任務都敗在「看不懂自己產出的圖」。
+# 找不到檔案就退回純文字，不要讓 server 開不起來。
+if (Test-Path -LiteralPath $mmproj) {
+    # --image-min-tokens 1024：llama.cpp 啟動時會警告 Qwen-VL 低於 1024
+    # image token 在 grounding 任務（指出畫面上某物在哪）會失準。
+    # 實測預設只給 868 token，模型把渲染雜點誤判成訊號跳變。
+    $launchArgs += @('--mmproj', $mmproj, '--image-min-tokens', '1024')
+    Write-Host "Vision: ON (mmproj BF16, image-min-tokens 1024)" -ForegroundColor Green
+} else {
+    Write-Host "Vision: OFF (mmproj not found: $mmproj)" -ForegroundColor Yellow
+}
 Start-Process -FilePath $llama -ArgumentList $launchArgs -WindowStyle Minimized
 
 Write-Host "Waiting up to 180s for model load..." -ForegroundColor Cyan
@@ -109,7 +129,10 @@ for ($i = 0; $i -lt 180; $i++) {
             # 不同步的話 Hermes 會用過大的值算壓縮門檻，可能高過 slot 上限
             # -> 永遠不觸發壓縮，直接撞牆讓請求失敗。
             $perSlot = [int]($Ctx / $Slots)
-            $hermesExe = "$env:LOCALAPPDATA\hermes\hermes-agentenv\Scripts\hermes.exe"
+            # 雙引號字串裡的 \v 會被 PowerShell 當成跳脫字元(0x0B)吃掉，
+            # "hermes-agent\venv\..." 會變成 "hermes-agent<VT>env\..."。
+            # 改用 Join-Path + 單引號，路徑才會是字面值。
+            $hermesExe = Join-Path $env:LOCALAPPDATA 'hermes\hermes-agent\venv\Scripts\hermes.exe'
             if (Test-Path -LiteralPath $hermesExe) {
                 & $hermesExe config set model.context_length $perSlot 2>&1 | Out-Null
                 Write-Host ("[OK] Hermes context_length -> {0:N0} ({1} slot)" -f $perSlot, $Slots) -ForegroundColor Green
