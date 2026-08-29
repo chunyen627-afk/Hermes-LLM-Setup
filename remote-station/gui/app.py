@@ -5041,6 +5041,36 @@ def _should_search(question, context=""):
     return None
 
 
+def _describe_for_search(img_b64, question):
+    """讓模型先看一眼圖，講出可以拿去搜尋的線索。
+
+    使用者第一則就傳圖問「這是誰」時，問題本身搜不到任何東西。
+    先問出作品名、角色特徵，才有東西可以查。回傳一句話，失敗就回 None。
+    """
+    try:
+        r = requests.post(SIMPLE_UPSTREAM, json={
+            "model": SIMPLE_MODEL,
+            "messages": [{"role": "user", "content": [
+                {"type": "text",
+                 "text": "用一句話說出這張圖最適合拿去網路搜尋的線索："
+                         "作品名稱、角色名、商品名或最明顯的外觀特徵。"
+                         "不確定作品名就描述特徵。只回那一句，不要解釋。"},
+                {"type": "image_url", "image_url": {"url": img_b64}},
+            ]}],
+            # thinking 會先吃額度，給太小會回空字串（見 memory）
+            "max_tokens": 2600,
+            "temperature": 0.2,
+            "stream": False,
+        }, timeout=SEARCH_DECIDE_TIMEOUT)
+        r.raise_for_status()
+        out = (r.json()["choices"][0]["message"].get("content") or "").strip()
+    except Exception:
+        return None
+    # 取最後一行非空的（前面可能是思路）
+    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    return lines[-1][:120] if lines else None
+
+
 def _web_search(keyword):
     """跑 ddgs 搜尋，回傳整理好的文字。查不到就回 None。"""
     try:
@@ -5103,18 +5133,108 @@ def _simple_job_gc():
             _SIMPLE_JOBS.pop(k, None)
 
 
-def _simple_run(job_id, payload_msgs):
-    """背景執行緒：真的去問模型，結果寫回工作表。"""
+# 模型答不出來時會講的話。出現這些就自動去搜一次。
+_UNSURE_RE = re.compile(
+    r"不確定|沒有把握|不太清楚|不知道|無法確定|不亂猜|"
+    r"查不到|沒?有?查到|找不到.{0,8}資料|"
+    r"建議你.{0,10}(查|看官方)|"
+    r"not sure|don't know|cannot determine", re.I)
+
+
+def _extract_keyword(reply, payload_msgs):
+    """從「我不確定」那段回覆裡挖出可以拿去搜尋的關鍵字。
+
+    已經確定要查了，所以不再問「需不需要查」—— 直接要關鍵字。
+    模型自己的描述通常已經含有作品名、外觀特徵這些線索。
+    """
+    q = ""
+    for m in reversed(payload_msgs):
+        c = m.get("content")
+        if m.get("role") == "user" and isinstance(c, str) and c:
+            q = c[:200]
+            break
+    prompt = (
+        "我剛才問：" + q + "\n\n"
+        "你的回答是：\n" + reply[:800] + "\n\n"
+        "你說你不確定。現在請給我一組最可能查到答案的搜尋關鍵字。\n"
+        "規則：只回關鍵字本身，一行，不超過 15 個字，不要解釋、"
+        "不要加引號、不要寫「關鍵字：」。\n"
+        "把你提到的作品名、角色特徵、專有名詞組合起來。")
     try:
-        r = requests.post(SIMPLE_UPSTREAM, json={
-            "model": SIMPLE_MODEL,
-            "messages": payload_msgs,
-            "max_tokens": 2048,
-            "temperature": 0.7,
-            "stream": False,
-        }, timeout=900)
-        r.raise_for_status()
-        reply = (r.json()["choices"][0]["message"].get("content") or "").strip()
+        out = _ask_model([{"role": "user", "content": prompt}],
+                         max_tokens=2600, temperature=0.2,
+                         timeout=SEARCH_DECIDE_TIMEOUT)
+    except Exception:
+        return None
+    # 取最後一行非空的（前面可能是思路）
+    lines = [l.strip().strip('"\'「」 *`') for l in (out or "").splitlines()
+             if l.strip()]
+    for l in reversed(lines):
+        if 2 <= len(l) <= 40 and "：" not in l[:6]:
+            return l
+    return None
+
+
+def _ask_model(payload_msgs, max_tokens=2048, temperature=0.7, timeout=900):
+    r = requests.post(SIMPLE_UPSTREAM, json={
+        "model": SIMPLE_MODEL,
+        "messages": payload_msgs,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }, timeout=timeout)
+    r.raise_for_status()
+    return (r.json()["choices"][0]["message"].get("content") or "").strip()
+
+
+def _job_step(job_id, text):
+    """更新目前步驟，前端輪詢時顯示出來。
+
+    本地模型一步就要一兩分鐘，不講的話使用者會以為當掉了。
+    """
+    with _SIMPLE_JOBS_LOCK:
+        j = _SIMPLE_JOBS.get(job_id)
+        if j and j.get("status") == "pending":
+            j["step"] = text
+
+
+def _simple_run(job_id, payload_msgs):
+    """背景執行緒：問模型，答不出來就自動查一次網路再問一遍。
+
+    為什麼不一開始就搜：多數問題不需要，先搜等於每題都多花一輪推理。
+    附圖的情況更明顯 —— 還沒看圖之前根本不知道要搜什麼。
+    所以改成「先答，答不出來才查」，代價是那種情況會慢一輪。
+    """
+    try:
+        has_img = any(isinstance(m.get("content"), list) for m in payload_msgs)
+        _job_step(job_id, "看圖中…" if has_img else "思考中…")
+        reply = _ask_model(payload_msgs)
+
+        # 第一輪答不出來 -> 拿它自己的描述當線索去搜，再問一次。
+        # 這裡不能用 _should_search —— 那支要先判斷「需不需要查」，
+        # 而我們已經確定需要了，再問一次只會被它的預篩擋掉。直接要關鍵字。
+        if reply and _UNSURE_RE.search(reply):
+            try:
+                _job_step(job_id, "答不出來，正在想搜尋關鍵字…")
+                kw = _extract_keyword(reply, payload_msgs)
+                if kw:
+                    _job_step(job_id, "上網查「" + kw + "」…")
+                    found = _web_search(kw)
+                    if found:
+                        _job_step(job_id, "查到資料了，重新整理答案…")
+                        retry = list(payload_msgs)
+                        retry.append({"role": "assistant", "content": reply})
+                        retry.append({"role": "user", "content": (
+                            "【網路搜尋結果】關鍵字：" + kw + "\n\n" + found
+                            + "\n\n---\n\n我幫你查了網路，資料在上面。"
+                              "請根據這些重新回答我剛才的問題，"
+                              "資料裡沒提到的就說不知道，不要自己編。")})
+                        better = _ask_model(retry)
+                        if better:
+                            reply = better
+            except Exception:
+                pass        # 搜尋失敗就用第一輪的答案，不要整個壞掉
+
         with _SIMPLE_JOBS_LOCK:
             _SIMPLE_JOBS[job_id] = {"status": "done", "reply": reply,
                                     "done_at": time.time()}
@@ -5153,8 +5273,13 @@ def _simple_prepare(data):
             if n_url:
                 last["content"] = expanded
 
-    # 沒有貼網址、也沒有附圖時，問模型這題要不要查網路。
-    if (not n_url) and (not img) and payload_msgs \
+    # 沒有貼網址時，問模型這題要不要查網路。
+    #
+    # 附圖的情況也要查 —— 使用者常常傳一張角色圖問「這是誰」，模型看得出
+    # 作品和外觀特徵，但記不得角色名單。這時前文（前幾則對話講過的作品名、
+    # 上一則的描述）就是搜尋線索。不查的話它只能說「我不確定」。
+    # 圖本身還是照樣送進去，看圖和搜尋兩件事不衝突。
+    if (not n_url) and payload_msgs \
             and payload_msgs[-1]["role"] == "user" \
             and isinstance(payload_msgs[-1]["content"], str):
         q = payload_msgs[-1]["content"]
@@ -5164,7 +5289,14 @@ def _simple_prepare(data):
             c = m.get("content")
             if isinstance(c, str) and c:
                 prev.append(m["role"] + "：" + c[:200])
-        kw = _should_search(q, chr(10).join(prev))
+
+        # 附圖時這裡不預先搜尋 —— 那時還不知道圖裡是什麼，「這是誰」
+        # 搜不到東西，先看圖又要多花一輪。改成讓它先正常回答，
+        # 答不出來才自動去搜（見 _simple_run 的第二輪）。
+        if img:
+            kw = None
+        else:
+            kw = _should_search(q, chr(10).join(prev))
         if kw:
             found = _web_search(kw)
             if found:
@@ -5234,6 +5366,7 @@ def api_simple_poll():
                         "error": "找不到這個工作（可能已過期）"}), 404
     if job["status"] == "pending":
         return jsonify({"ok": True, "status": "pending",
+                        "step": job.get("step") or "處理中…",
                         "elapsed": int(time.time() - job["started"])})
     if job["status"] == "done":
         return jsonify({"ok": True, "status": "done", "reply": job["reply"]})

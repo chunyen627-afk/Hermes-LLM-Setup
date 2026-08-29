@@ -476,7 +476,17 @@ async function send() {
         } catch (e) {
           continue;      // 網路瞬斷不要放棄，下一輪再問
         }
-        if (p.status === 'pending') continue;
+        if (p.status === 'pending') {
+          // 本地模型一步就要一兩分鐘，把目前在做什麼寫出來，
+          // 不然使用者會以為當掉了。
+          const el = wait.querySelector('.bubble');
+          if (el && p.step) {
+            const sec = p.elapsed || 0;
+            el.classList.remove('typing');
+            el.textContent = p.step + '（' + sec + ' 秒）';
+          }
+          continue;
+        }
         data = p.status === 'done'
           ? { ok: true, reply: p.reply }
           : { ok: false, error: p.error || '出了點問題' };
