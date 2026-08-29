@@ -90,8 +90,9 @@ def _watch_once():
 # === Gemini 看圖 ==========================================================
 # llama-server 沒掛 mmproj（掛了會爆 VRAM），所以圖片在這裡先轉成文字。
 # 手機 App 直連 :1234 就有視覺能力，本地模型完全不知道有圖這回事。
-GEMINI_KEY = os.environ.get('GEMINI_API_KEY',
-                            '')
+# 只從環境變數讀，不要寫死 —— 這支檔案會同步到公開倉庫。
+# 設定：[Environment]::SetEnvironmentVariable('GEMINI_API_KEY','...','User')
+GEMINI_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = 'gemini-2.5-flash'
 VISION_PROMPT = ('請把這張圖的內容轉成詳盡的純文字描述：所有文字、數字、'
                  'UI 佈局、程式碼、錯誤訊息都要寫出來，有介面元素請說明位置。')
