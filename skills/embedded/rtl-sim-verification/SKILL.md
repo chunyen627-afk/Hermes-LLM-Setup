@@ -2,7 +2,7 @@
 name: rtl-sim-verification
 description: "Build + verify RTL circuits via Icarus simulation."
 tags: [rtl, verilog, simulation, iverilog, verification, digital-design, waveform]
-related_skills: [verification-discipline, firmware-workflow, systematic-debugging]
+related_skills: [hardware-design-tradeoffs, verification-discipline, firmware-workflow, systematic-debugging]
 ---
 
 # RTL 模擬與驗證
@@ -28,6 +28,10 @@ other + verify your measurement tool first.
 ---
 
 ## 一之二、寫的是「硬體」不是「程式」
+
+⚠ **開始寫任何 RTL 之前，先看 [[hardware-design-tradeoffs]]** ——
+那裡有動手前該回答的六個問題（精度容許多少、資源夠不夠、目標頻率、
+頻寬瓶頸、介面選哪種）。答不出來就寫，做到一半會發現架構選錯要重來。
 
 模擬跑得過不代表做得出來。下面這些不是風格偏好，是**合成器接不接受**的問題。
 
@@ -78,6 +82,42 @@ testbench 要跟著改（等 N 拍才取結果），或加 valid/ready 交握。
   合成時會變成一串多工器。邏輯上等價，但意圖不明確、容易寫出 latch。
 - **`always @*` 裡有分支沒賦值** → **推出 latch**，這是最常見的合成災難。
   每個輸出在所有路徑上都要有值（開頭先給預設值最保險）。
+
+### 精度要折衷 —— 先定「多準才算對」，再開始寫
+
+**動手前先回答：這個電路的誤差容許範圍是多少？** 沒定義就寫，
+會掉進「追求位元精確」的無底洞 —— 2026-08-29 在 BF16 matmul 那題燒掉四小時，
+全部花在 IEEE-754 的 subnormal、tie-breaking、指數欄位。
+
+**怎麼定標準（由鬆到嚴，選最鬆的那個能滿足需求的）**：
+
+| 標準 | 適用 | 成本 |
+|---|---|---|
+| 應用層結果一致（生成的文字、辨識的類別一樣） | 神經網路推論 | 低 |
+| **相對誤差 < 1e-6** | **大多數 DSP / AI 加速器** | 中 |
+| 跟參考實作逐位元相同 | 金融、密碼學、需要可重現性 | 高 |
+| 跟精確有理數（`Fraction`）一致 | **幾乎沒有** | 極高 |
+
+**最後一列是陷阱**：`Fraction` 是精確有理數，**比 C 的 float 還嚴格**。
+C 的 `float a+b` 本身就有捨入誤差，不可能跟精確值一致 ——
+拿它當標準等於追一個連參考實作都達不到的目標。
+
+**幾個具體判斷**：
+
+- **量化格式決定精度上限**。BF16 只有 7 bit 尾數（2-3 位十進位數字），
+  在這個前提下雕 FP32 的捨入細節是解一個不存在的問題。
+  **先看資料格式有幾位有效數字，再決定要驗到多細。**
+- **累加順序不同，結果本來就會差**。C 是循序 `for` 迴圈累加，
+  硬體 PE array 常用樹狀平行加法 —— 最後幾個 bit 一定不一樣。
+  那是**架構差異不是 bug**，不要為了消除它去改架構。
+- **特殊值分開處理**。0 / inf / NaN 的行為要對（不要爆掉、不要產生垃圾），
+  但那是**分支邏輯**，跟數值精度是兩件事，不要混在一起驗。
+- **subnormal 通常可以不做**。很多商用加速器直接 flush-to-zero，
+  對 AI 推論沒有可觀察的影響。要做之前先問「不做會怎樣」。
+
+**驗證對象要是外部的**。題目說「跟 C 版本一致」就真的去跑 C，
+不要拿自己寫的參考模型當標準 —— 那是自己出題自己改考卷，
+模型跟 RTL 可能一起錯，而且錯得一致。
 
 ### 目標平台的算術資源
 

@@ -2,7 +2,7 @@
 name: xilinx-vcu118
 description: "Xilinx VCU118 (Virtex UltraScale+ VU9P) + Vivado: 建置、綜合、燒錄、驗證。開發此板前必讀。"
 tags: [fpga, xilinx, vcu118, vivado, ultrascale, verilog, vhdl, hls]
-related_skills: [embedded-ui-verification, stm32h7s78-dk]
+related_skills: [hardware-design-tradeoffs, rtl-sim-verification, embedded-ui-verification, stm32h7s78-dk]
 ---
 
 # Xilinx VCU118 + Vivado
