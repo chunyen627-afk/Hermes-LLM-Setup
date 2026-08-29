@@ -76,6 +76,13 @@ $llama = 'C:\...\llama.cpp-xxx\llama-server.exe'    # 步驟 1 的位置
 $model = 'C:\...\hub\你的模型.gguf'                  # 步驟 2 的位置
 ```
 
+**開機自動啟動**：由排程工作 `Qwen38-GPU-Server` 呼叫 `_bootmenu.ps1`
+（10 秒倒數選單，沒選就用預設的韌體模式 2 slot 各 120K）。
+手動要啟動同一套流程就雙擊桌面的「啟動 27B」（`啟動-27B.bat`），
+它會順便把橋接器帶起來，而且偵測到已在執行就不會重複啟動。
+
+⚠ 別在「啟動」資料夾另外放捷徑 —— 會跟排程搶同一個 port 8001。
+
 **驗證**：雙擊 `1-START-GPU-Server.bat`，等它印出
 `[OK] Ready (NN s) - qwen38_mtp`，然後：
 ```powershell
@@ -134,10 +141,25 @@ mmproj 是**最後才配置**的。舊比例會讓 device0（3070 8GB）剛好�
 「深藍灰/炭黑色」並正確指出只有三個欄位有波形。回覆以 `Analysis:` 開頭
 也是走 Gemini 的特徵。
 
+**5. 一定要 2 slot（`--parallel 2`），不能用 1 slot**
+
+`vision_analyze` 是**另一個獨立請求**。1 slot 時它得排隊等主任務跑完 ——
+實測 900 秒都等不到，必定 timeout；2 slot 下 21.9 秒完成。
+只要還想讓模型自己看圖，就不能用單 slot。
+
+```
+--parallel 2 --ctx-size 245760    # 每 slot 122,880
+```
+
+⚠ 245760 一開始會在 device2 差 682 MiB 而 OOM，把 `--tensor-split` 從 `6,13,13` 改成 `6,14,12` 就過了（實測 29.4/32.7 GB）。
+`auxiliary.vision.timeout` 設 180 秒即可（實測 21.9 秒完成，留 8 倍餘裕）。
+
 **驗證**：
 ```powershell
 (Invoke-RestMethod http://127.0.0.1:8001/props).modalities
 # 要看到 vision=True
+(Invoke-RestMethod http://127.0.0.1:8001/slots).Count
+# 要是 2
 ```
 
 **壓縮（compression）建議留在雲端** —— 它在 ctx 快滿時觸發，那時本地模型

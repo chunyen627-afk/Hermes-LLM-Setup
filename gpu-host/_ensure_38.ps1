@@ -1,4 +1,7 @@
-﻿param([int]$Port = 8001, [int]$Ctx = 163840, [int]$Slots = 2,
+﻿# 預設 2 slot / 總 ctx 245760（每 slot 122,880）。
+# 固定 2 slot 的理由：視覺請求若跟主任務搶同一個 slot 會排隊到 timeout
+# （1 slot 時實測 900 秒都等不到；2 slot 下 21.9 秒完成）。
+param([int]$Port = 8001, [int]$Ctx = 245760, [int]$Slots = 2,
       [ValidateSet("off","low","high")][string]$Think = "low",
       [ValidateSet("chat","fw")][string]$Mode = "chat")
 
@@ -73,13 +76,20 @@ $launchArgs = @(
     '--cache-type-k', 'q4_0',
     '--cache-type-v', 'q4_0',
     '--n-gpu-layers', '999',
-    # 6,13,13 而非 8,12,10：mmproj(888MiB) 最後才配置，原本的比例會讓
-    # device0 (3070 8GB) 剛好塞不下 -> cudaMalloc OOM。把負載推給兩張 3060
-    # 之後，200K ctx + 視覺同時成立（實測 28.3/32.7 GB）。
-    '--tensor-split', '6,13,13',
+    # tensor-split 調過兩次，都是為了擠出最後幾百 MiB：
+    #   8,12,10 -> 6,13,13  mmproj(888MiB) 最後才配置，原比例會讓 device0
+    #                       (3070 8GB) 剛好塞不下 -> cudaMalloc OOM
+    #   6,13,13 -> 6,14,12  改 2 slot 後換 device2 差 682MiB 爆掉，
+    #                       把負擔移一點給 device1 就過了
+    # 實測：1 slot 200K = 28.3GB / 2 slot 各 120K = 29.4GB（上限 32.7GB）
+    '--tensor-split', '6,14,12',
     '-sm', 'layer',
     '--batch-size', '2048',
     '--ubatch-size', '512',
+    # 單輪輸出上限。預設 -1 = 無限，2026-08-29 踩到：一個開放式題目讓它
+    # 連續生成 2.4 萬 token 都不呼叫工具（卡在自我重複），還剩 4.2 萬額度，
+    # 跑滿要再 42 分鐘。8192 對正常回合綽綽有餘，失控時會被截斷止血。
+    '--n-predict', '8192',
     # === Prompt cache 修復（hybrid/recurrent 架構專用）===
 
     # --swa-full            : 用完整 SWA cache，恢復被 sliding window 破壞的快取操作

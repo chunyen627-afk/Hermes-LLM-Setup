@@ -8,7 +8,7 @@ $menu = @(
     @{ Key='1'; Name='韌體設計 (預設)'; Think='low';  Mode='fw';   Ctx=245760; Desc='STM32/RTOS 日常。2 slot 各 120K，多輪除錯用這個' }
     @{ Key='2'; Name='一般寫 code';     Think='off';  Mode='chat'; Ctx=245760; Desc='寫程式/網頁/遊戲，最順的組合' }
     @{ Key='3'; Name='深度推理 (很慢)';   Think='high'; Mode='fw';   Ctx=245760; Desc='單一大模組才用。品質最好但連說 ok 都要 80 秒' }
-    @{ Key='4'; Name='長 context 模式';  Think='off';  Mode='chat'; Ctx=286720; Desc='每 slot 140K，VRAM 很緊可能失敗' }
+    @{ Key='4'; Name='單 slot 超長 ctx';  Think='off';  Mode='chat'; Ctx=204800; Slots=1; Desc='1 slot 200K。⚠ 視覺會 timeout，只在確定不看圖時選' }
     @{ Key='5'; Name='不啟動';           Think=$null }
 )
 
@@ -58,7 +58,8 @@ Write-Host ''
 Write-Host ("   >> {0}  (think={1} mode={2} ctx={3})" -f $sel.Name, $sel.Think, $sel.Mode, $sel.Ctx) -ForegroundColor Cyan
 Write-Host ''
 
-& (Join-Path $PSScriptRoot '_ensure_38.ps1') -Think $sel.Think -Mode $sel.Mode -Ctx $sel.Ctx
+$slots = if ($sel.Slots) { $sel.Slots } else { 2 }
+& (Join-Path $PSScriptRoot '_ensure_38.ps1') -Think $sel.Think -Mode $sel.Mode -Ctx $sel.Ctx -Slots $slots
 $rc = $LASTEXITCODE
 
 if ($rc -eq 0) {
