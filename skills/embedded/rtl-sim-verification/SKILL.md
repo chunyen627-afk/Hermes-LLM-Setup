@@ -73,6 +73,27 @@ sampling math).
   — keep a list of all `(code,name)` pairs, not a dict. Non-greedy regex
   `(.+?)\$end` stops at the first `$`. Full details in `references/vcd-parsing.md`.
 
+### 多模組交握 / valid-ready (2026-08-29, frame producer→consumer)
+
+- **NBA sampling is the #1 handshake-bug source.** A register assigned with `<=`
+  on cycle N holds its OLD value for the rest of cycle N. Two distinct bugs:
+  (a) a consumer that checks `if (expected_words == 0)` right after latching
+  `expected_words <= data_in[14:11]` reads the stale register, not the new value;
+  (b) a testbench that samples result registers on the same posedge as the
+  `frame_done` pulse reads pre-update values. Fix both by checking the incoming
+  wire (`data_in`) or delaying the sample by one cycle.
+- **Backpressure correctness = hold-stable.** The producer must keep `valid`
+  high and `data_out` unchanged while `ready` is low. If you advance state
+  unconditionally each cycle, a deasserted `ready` drops `valid` and skips beats.
+  Gate every state advance on `fire = valid && ready`. Add an in-sim assertion:
+  "while `valid && !ready`, `data_out` must not change" — it catches this class
+  instantly (0 violations = pass).
+- **Independent reconstruction is the real proof.** Log every transfer
+  (`$display("TRANSFER %0d data=%h", $time, data_bus)`) and have Python rebuild
+  each frame from the raw word stream (header bit → id/len, then N data words),
+  comparing id/word-count/checksum against the consumer's reports. A trailing
+  in-progress frame at `$finish` is expected — exclude it, don't fail on it.
+
 ### 算術電路 (2026-08-29, Booth radix-4 乘法器)
 
 - **不要憑記憶寫編碼表 / 真值表。** 我憑印象寫的 Booth radix-4 表是錯的，

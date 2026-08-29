@@ -38,6 +38,36 @@ unit of the timescale**, NOT always picoseconds. With `` `timescale 1ns/1ps``:
 Read the VCD `$timescale` line before converting to seconds. A 1000× error here
 silently breaks every time-based calculation.
 
+## Multi-bit values have a SPACE before the code
+
+A 16-bit value is written `b10010110011001 *` — note the **space** between the
+last bit and the code char. A naive parser that stops at the first non-bit char
+will grab the space (or misread a bit) as the code. Correct: read all `01xz`
+chars after `b`, then skip whitespace, then take the next char as the code.
+
+## VCD times are in PRECISION units, not base units
+
+With `` `timescale 1ns/1ps``: `$time` in Verilog and `$display("%0d",$time)`
+are in **ns** (base unit), but the VCD `#` timestamps are in **ps** (precision
+unit). So a transfer at `$time=65` (ns) appears as `#65000` in the VCD. When
+correlating log timestamps with VCD times, multiply the log value by 1000.
+
+## Duplicate signal codes across scopes
+
+`$dumpvars(0, tb)` dumps the whole hierarchy, so each signal appears once per
+scope (top-level reg + each module's port). They share names but have different
+codes — and some duplicates are inert (0 transitions). When looking up a signal
+by name, pick the code with the **most transitions** in the body, not just the
+first match.
+
+## Sampling a register on its assignment edge reads the OLD value
+
+Non-blocking assignments (`<=`) update at end of timestep. If you sample a
+register in an `always @(posedge clk)` block on the same cycle it was assigned,
+you read the **previous** value. To log a result that pulses (e.g. `frame_done`),
+delay by one cycle: register the pulse, then sample the data registers on the
+next posedge when the NBA has settled.
+
 ## Reconstructing frames from transitions
 
 Given a list of `(time, value)` transitions for a signal:
