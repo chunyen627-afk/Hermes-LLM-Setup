@@ -452,12 +452,37 @@ async function send() {
   const wait = thinking();
 
   try {
+    // 本地模型一次要 90-220 秒，手機瀏覽器約 60 秒就切斷連線，
+    // 會誤判成「連不上伺服器」。所以改成：後端立刻回 job_id，這裡輪詢。
     const res = await fetch('/api/simple/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: history, image_base64: img })
     });
-    const data = await res.json();
+    let data = await res.json();
+
+    if (data.ok && data.job_id) {
+      const started = Date.now();
+      while (true) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (Date.now() - started > 15 * 60 * 1000) {   // 15 分鐘還沒好就放棄
+          data = { ok: false, error: '等太久了，請再試一次' };
+          break;
+        }
+        let p;
+        try {
+          const pr = await fetch('/api/simple/poll?job_id=' + data.job_id);
+          p = await pr.json();
+        } catch (e) {
+          continue;      // 網路瞬斷不要放棄，下一輪再問
+        }
+        if (p.status === 'pending') continue;
+        data = p.status === 'done'
+          ? { ok: true, reply: p.reply }
+          : { ok: false, error: p.error || '出了點問題' };
+        break;
+      }
+    }
     wait.remove();
 
     if (data.ok) {

@@ -5002,16 +5002,24 @@ def _obviously_no_search(q):
     return False
 
 
-def _should_search(question):
-    """問模型這題要不要查網路。回傳搜尋關鍵字，不用查就回 None。"""
+def _should_search(question, context=""):
+    """問模型這題要不要查網路。回傳搜尋關鍵字，不用查就回 None。
+
+    context 是前幾則對話。使用者常常先問一個主題、下一句只說「網路查」，
+    沒有前文的話就會拿「網路查」三個字去搜尋，當然查不到。
+    """
     if _obviously_no_search(question):
         return None
+    if context:
+        question = ("前面的對話：\n" + context + "\n\n使用者現在說：" + question)
     try:
         r = requests.post(SIMPLE_UPSTREAM, json={
             "model": SIMPLE_MODEL,
             "messages": [{"role": "user",
                           "content": _SEARCH_DECIDE_PROMPT + question}],
-            "max_tokens": 60,
+            # max_tokens 要留夠 —— 模型開著 reasoning，思考會先吃掉額度，
+            # 給 60 的話 content 會是空字串，判斷永遠變成「不用查」。
+            "max_tokens": 2600,
             "temperature": 0.1,
             "stream": False,
         }, timeout=SEARCH_DECIDE_TIMEOUT)
@@ -5020,12 +5028,17 @@ def _should_search(question):
     except Exception:
         return None          # 判斷失敗就當作不用查，不要卡住回答
 
-    line = out.splitlines()[0].strip() if out else ""
-    if not line.upper().startswith("YES"):
-        return None
-    _, _, kw = line.partition("|")
-    kw = kw.strip().strip('"\'')
-    return kw or question[:40]
+    # 不要只看第一行 —— 模型可能先講一段思路，YES 夾在後面。
+    # 掃每一行找 YES|關鍵字，找不到才看有沒有明確的 NO。
+    for line in (out or "").splitlines():
+        s = line.strip().strip("*` ")
+        if s.upper().startswith("YES"):
+            _, _, kw = s.partition("|")
+            kw = kw.strip().strip('"\'')
+            return kw or question[:40]
+        if s.upper() == "NO":
+            return None
+    return None
 
 
 def _web_search(keyword):
@@ -5072,19 +5085,58 @@ def simple_chat_page():
                                "simple_chat.html")
 
 
-@app.route("/api/simple/send", methods=["POST"])
-def api_simple_send():
-    """一次一問一答。body: {messages:[{role,content}], image_base64?}"""
-    data = request.json or {}
+# ===== 背景工作表（給 /api/simple/send 用）=====
+# 本地模型一次回應要 90-220 秒，手機瀏覽器的 fetch 約 60 秒就切斷，
+# 前端會誤判成「連不上伺服器」。所以改成背景跑 + 前端輪詢。
+_SIMPLE_JOBS = {}
+_SIMPLE_JOBS_LOCK = threading.Lock()
+_SIMPLE_JOB_TTL = 1800          # 完成後保留 30 分鐘，讓前端有時間取回
+
+
+def _simple_job_gc():
+    """清掉過期的工作，避免記憶體無限長。"""
+    now = time.time()
+    with _SIMPLE_JOBS_LOCK:
+        dead = [k for k, v in _SIMPLE_JOBS.items()
+                if v.get("done_at") and now - v["done_at"] > _SIMPLE_JOB_TTL]
+        for k in dead:
+            _SIMPLE_JOBS.pop(k, None)
+
+
+def _simple_run(job_id, payload_msgs):
+    """背景執行緒：真的去問模型，結果寫回工作表。"""
+    try:
+        r = requests.post(SIMPLE_UPSTREAM, json={
+            "model": SIMPLE_MODEL,
+            "messages": payload_msgs,
+            "max_tokens": 2048,
+            "temperature": 0.7,
+            "stream": False,
+        }, timeout=900)
+        r.raise_for_status()
+        reply = (r.json()["choices"][0]["message"].get("content") or "").strip()
+        with _SIMPLE_JOBS_LOCK:
+            _SIMPLE_JOBS[job_id] = {"status": "done", "reply": reply,
+                                    "done_at": time.time()}
+    except requests.exceptions.Timeout:
+        with _SIMPLE_JOBS_LOCK:
+            _SIMPLE_JOBS[job_id] = {"status": "error",
+                                    "error": "模型回應逾時，請再試一次",
+                                    "done_at": time.time()}
+    except Exception as e:
+        with _SIMPLE_JOBS_LOCK:
+            _SIMPLE_JOBS[job_id] = {"status": "error", "error": str(e)[:200],
+                                    "done_at": time.time()}
+
+
+def _simple_prepare(data):
+    """把前端送來的東西整理成要餵給模型的 messages。"""
     msgs = data.get("messages") or []
     img = data.get("image_base64")
-
     if not isinstance(msgs, list) or not msgs:
-        return jsonify({"ok": False, "error": "messages 不能是空的"}), 400
+        return None, "messages 不能是空的"
 
-    # 只留最近 20 則，避免手機端無限累積
-    msgs = msgs[-20:]
-
+    msgs = msgs[-20:]           # 只留最近 20 則，避免手機端無限累積
     payload_msgs = [{"role": "system", "content": SIMPLE_SYSTEM}]
     for m in msgs:
         role = m.get("role")
@@ -5102,12 +5154,17 @@ def api_simple_send():
                 last["content"] = expanded
 
     # 沒有貼網址、也沒有附圖時，問模型這題要不要查網路。
-    # 有網址就不用查（已經抓回內容了）；有圖的話問題通常是關於圖本身。
     if (not n_url) and (not img) and payload_msgs \
             and payload_msgs[-1]["role"] == "user" \
             and isinstance(payload_msgs[-1]["content"], str):
         q = payload_msgs[-1]["content"]
-        kw = _should_search(q)
+        # 帶最近幾則對話當脈絡，這樣「網路查」「那他呢」也查得到東西
+        prev = []
+        for m in payload_msgs[1:-1][-4:]:
+            c = m.get("content")
+            if isinstance(c, str) and c:
+                prev.append(m["role"] + "：" + c[:200])
+        kw = _should_search(q, chr(10).join(prev))
         if kw:
             found = _web_search(kw)
             if found:
@@ -5117,7 +5174,7 @@ def api_simple_send():
                       "資料裡沒提到的就說不知道，不要自己編。\n\n"
                       "使用者的問題：" + q)
 
-    # 有圖就用 OpenAI 的多模態格式，橋接器會攔下來送 Gemini
+    # 有圖就用 OpenAI 的多模態格式，本機模型自己看得到（有掛 mmproj）
     if img and payload_msgs:
         last = payload_msgs[-1]
         if last["role"] == "user":
@@ -5126,21 +5183,62 @@ def api_simple_send():
                 {"type": "image_url", "image_url": {"url": img}},
             ]
 
-    try:
-        r = requests.post(SIMPLE_UPSTREAM, json={
-            "model": SIMPLE_MODEL,
-            "messages": payload_msgs,
-            "max_tokens": 2048,
-            "temperature": 0.7,
-            "stream": False,
-        }, timeout=600)
-        r.raise_for_status()
-        reply = r.json()["choices"][0]["message"].get("content") or ""
-        return jsonify({"ok": True, "reply": reply.strip()})
-    except requests.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "模型回應逾時，請再試一次"}), 504
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+    return payload_msgs, None
+
+
+@app.route("/api/simple/send", methods=["POST"])
+def api_simple_send():
+    """收下問題就回一個 job_id，實際工作丟背景跑。
+
+    body: {messages:[{role,content}], image_base64?, sync?}
+    sync=true 會等到跑完才回（本機測試用，手機不要用會逾時）。
+    """
+    data = request.json or {}
+    payload_msgs, err = _simple_prepare(data)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    # 本機測試方便：sync=true 就照舊等到好
+    if data.get("sync"):
+        try:
+            r = requests.post(SIMPLE_UPSTREAM, json={
+                "model": SIMPLE_MODEL,
+                "messages": payload_msgs,
+                "max_tokens": 2048,
+                "temperature": 0.7,
+                "stream": False,
+            }, timeout=900)
+            r.raise_for_status()
+            reply = r.json()["choices"][0]["message"].get("content") or ""
+            return jsonify({"ok": True, "reply": reply.strip()})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+    _simple_job_gc()
+    job_id = uuid.uuid4().hex[:16]
+    with _SIMPLE_JOBS_LOCK:
+        _SIMPLE_JOBS[job_id] = {"status": "pending", "started": time.time()}
+    threading.Thread(target=_simple_run, args=(job_id, payload_msgs),
+                     daemon=True).start()
+    return jsonify({"ok": True, "job_id": job_id, "status": "pending"})
+
+
+@app.route("/api/simple/poll")
+def api_simple_poll():
+    """前端每幾秒問一次結果。回 pending / done / error。"""
+    job_id = request.args.get("job_id") or ""
+    with _SIMPLE_JOBS_LOCK:
+        job = _SIMPLE_JOBS.get(job_id)
+    if not job:
+        return jsonify({"ok": False, "status": "unknown",
+                        "error": "找不到這個工作（可能已過期）"}), 404
+    if job["status"] == "pending":
+        return jsonify({"ok": True, "status": "pending",
+                        "elapsed": int(time.time() - job["started"])})
+    if job["status"] == "done":
+        return jsonify({"ok": True, "status": "done", "reply": job["reply"]})
+    return jsonify({"ok": False, "status": "error",
+                    "error": job.get("error") or "未知錯誤"})
 
 
 # ----- 簡易聊天的歷史紀錄（存伺服器，跟主人的 sessions/ 分開）-----

@@ -36,3 +36,4 @@
 - [Serena 要 LSP](serena-needs-lsp.md) — 沒裝 clangd 符號查詢無效，只能讀整檔差 93% ctx
 - [讀 skill ≠ 會用](skill-read-vs-applied.md) — 會主動讀但不一定採用裡面的方法，必要做法要寫進提示詞
 - [本地視覺開啟](local-vision-enabled.md) — mmproj + tensor-split 6,13,13 + Hermes 視覺路由，200K ctx 不用犧牲
+- [thinking 吃掉 max_tokens](reasoning-eats-max-tokens.md) — 額度給太小會回空字串，同一天踩兩次
