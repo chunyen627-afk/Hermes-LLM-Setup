@@ -45,7 +45,7 @@ def _latest_sid():
     try:
         c = sqlite3.connect(DB)
         r = c.execute(
-            "SELECT id FROM sessions WHERE source='cli' "
+            "SELECT id FROM sessions WHERE source IN ('cli','desktop','tui') "
             "ORDER BY started_at DESC LIMIT 1").fetchone()
         c.close()
         return r[0] if r else None
