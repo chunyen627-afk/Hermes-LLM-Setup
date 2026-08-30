@@ -37,3 +37,6 @@
 - [讀 skill ≠ 會用](skill-read-vs-applied.md) — 會主動讀但不一定採用裡面的方法，必要做法要寫進提示詞
 - [本地視覺開啟](local-vision-enabled.md) — mmproj + tensor-split 6,13,13 + Hermes 視覺路由，200K ctx 不用犧牲
 - [thinking 吃掉 max_tokens](reasoning-eats-max-tokens.md) — 額度給太小會回空字串，同一天踩兩次
+- [27B 當小弟的流程](27b-agent-workflow.md) — 出模糊題、我驗收、踩坑寫回 skill；三輪介入 3→2→0 次
+- [橋接器任務守門員](bridge-task-guardian.md) — 偵測停止、印上一輪摘要、八道防呆後自動接續；工具上限真相
+- [matmul_axi 專案](matmul-axi-project.md) — 27B 做的 BF16 AXI 加速器，進度與複驗方式
