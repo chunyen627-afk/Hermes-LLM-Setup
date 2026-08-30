@@ -143,7 +143,7 @@ def run_next_stage(project, auto=False, gate_reason=""):
             return
 
     out("\n派工中…（這個視窗會顯示進度，不要關）\n")
-    subprocess.run([sys.executable, AUTORELAY, "--query-file", TASK_FILE])
+    subprocess.run([sys.executable, AUTORELAY, "--task-file", TASK_FILE])
 
 
 def run_new_task(project):
@@ -173,7 +173,7 @@ def run_new_task(project):
         out("已取消。")
         return
     out("\n派工中…\n")
-    subprocess.run([sys.executable, AUTORELAY, "--query-file", NEW_TASK_FILE])
+    subprocess.run([sys.executable, AUTORELAY, "--task-file", NEW_TASK_FILE])
 
 
 def main():

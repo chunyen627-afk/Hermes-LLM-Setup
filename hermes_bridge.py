@@ -515,7 +515,7 @@ def _act_on_stop(reason, project, sid):
     if os.path.exists(guard):
         try:
             r = subprocess.run(
-                [sys.executable, guard, '--json', '--commit'],
+                [sys.executable, guard, '--json'],
                 capture_output=True, timeout=60)
             # 不能用 text=True —— 那會用系統預設編碼（Windows 是 cp950），
             # 守衛的輸出有中文 UTF-8，一解就 UnicodeDecodeError，
@@ -545,6 +545,17 @@ def _act_on_stop(reason, project, sid):
              '--gate-reason', gate_reason, '--auto'])
     except Exception as e:
         print(f'       接續失敗：{str(e)[:80]}', flush=True)
+        return
+    # 指令真的送出去了才記錄。
+    # 判斷階段就 commit 的話，中間任何一步失敗（例如編碼錯誤）
+    # 都會留下 last_sid，然後被自己的「同 session 不重複」擋住，
+    # 重試永遠沒機會 —— 今晚就是這樣卡住的。
+    if os.path.exists(guard):
+        try:
+            subprocess.run([sys.executable, guard, '--json', '--commit'],
+                           capture_output=True, timeout=60)
+        except Exception:
+            pass
 
 
 def _print_session_summary(sid, project):
