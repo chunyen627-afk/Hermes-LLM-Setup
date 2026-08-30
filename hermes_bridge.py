@@ -23,6 +23,15 @@ BUSY_REPORT_MAX = 900      # 15 分鐘
 _busy_gap = BUSY_REPORT_MIN
 _busy_next = 0.0
 
+# 停止偵測本來是一次性的：報過一次 [STOP] 之後就靠旗標壓住，不再判斷。
+# 問題是那一刻 autoguard 若因故沒接（防呆擋下、或它自己出錯），
+# 時機就過了 —— 之後任務永遠停在那裡等人。
+# 改成定期重試：只要還是閒置狀態，每 RETRY_STOP_SEC 再問一次 autoguard。
+RETRY_STOP_SEC = 600       # 10 分鐘重試一次
+RETRY_STOP_MAX = 6         # 最多重試幾次（之後就真的等人）
+_stop_retry_next = 0.0
+_stop_retry_n = 0
+
 # 偵測到任務停掉時，要不要自動接續。
 # 預設關閉 —— 這會在你不在場時執行外部程式跑新任務，判斷錯就會亂跑。
 # 要開：設環境變數 HERMES_AUTORESUME=1（或桌面的「自動接續」捷徑）
@@ -227,8 +236,11 @@ class B(http.server.BaseHTTPRequestHandler):
             info = ''
         print(f'[{_n:>4}] 本機推論 OK  {dt:.1f}s{info}', flush=True)
         global _last_req, _idle_reported, _busy_gap, _busy_next
+        global _stop_retry_next, _stop_retry_n
         _last_req = time.time()
         _idle_reported = False
+        _stop_retry_next = 0.0      # 任務又動了，重試計數歸零
+        _stop_retry_n = 0
         _busy_gap = BUSY_REPORT_MIN      # 新請求進來，退避重新從最短間隔算
         _busy_next = 0.0
         if WATCH > 0 and _n % WATCH == 0:
@@ -574,6 +586,7 @@ def _idle_watch():
     這裡每 IDLE_REPORT_SEC 秒檢查一次，閒置就明講。
     """
     global _idle_reported, _busy_gap, _busy_next
+    global _stop_retry_next, _stop_retry_n
     while True:
         time.sleep(30)
         try:
@@ -593,10 +606,10 @@ def _idle_watch():
                 pass
 
             ts = time.strftime('%H:%M:%S')
+            now = time.time()
             if busy:
                 # 還在推理，只是這一輪很長（長任務常見）。
                 # 這種情況不需要一直提醒 —— 間隔越拉越長，最多每 15 分鐘一次。
-                now = time.time()
                 if now >= _busy_next:
                     print(f'[idle] {ts} 已 {idle/60:.0f} 分鐘沒有新請求，'
                           f'但模型仍在推理中（同一輪還沒結束）', flush=True)
@@ -607,7 +620,18 @@ def _idle_watch():
                 print(f'[STOP] {ts} 已 {idle/60:.0f} 分鐘沒有新請求，'
                       f'而且模型也沒在推理 —— 任務應該已經結束或中斷了',
                       flush=True)
-                _idle_reported = True     # 只報一次，不洗版
+                _idle_reported = True     # 這行訊息只印一次，不洗版
+                _stop_retry_next = now + RETRY_STOP_SEC
+                _stop_retry_n = 0
+                _handle_stop()
+            elif (_stop_retry_n < RETRY_STOP_MAX
+                  and now >= _stop_retry_next > 0):
+                # 還是閒置 —— 再問一次 autoguard。它可能因為冷卻、
+                # 或上次判斷時的暫時狀況而沒接續，現在條件可能已經變了。
+                _stop_retry_n += 1
+                _stop_retry_next = now + RETRY_STOP_SEC
+                print(f'[STOP] {ts} 仍然閒置，再檢查一次是否該接續 '
+                      f'（第 {_stop_retry_n}/{RETRY_STOP_MAX} 次）', flush=True)
                 _handle_stop()
         except Exception:
             pass
