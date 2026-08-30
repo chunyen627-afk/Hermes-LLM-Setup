@@ -34,8 +34,8 @@ POLL_SEC = 60
 
 WATCH = [
     "rtl/axi4_master.v", "rtl/matmul_top.v", "rtl/matmul_core.v",
-    "rtl/axi4_slave_reg.v", "rtl/axi4s_reg.v",
-    "tb/tb_axi4_master.v", "tb/tb_matmul_top.v", "tb/tb_matmul_core.v",
+    "rtl/axi4_slave_reg.v", "rtl/axi4s_reg.v", "rtl/async_fifo.v",
+    "tb/tb_axi4_master.v", "tb/tb_matmul_top_e2e.v", "tb/tb_matmul_core.v",
     "HANDOFF.md", "simcheck.json",
 ]
 
@@ -46,11 +46,14 @@ UNITS = {
     "matmul_core": ("tb_matmul_core",
                     ["tb/tb_matmul_core.v", "rtl/matmul_core.v",
                      "rtl/f32_mul.v", "rtl/f32_add.v"], "out/mmtest"),
-    "matmul_top": ("tb_matmul_top",
-                   ["tb/tb_matmul_top.v", "rtl/matmul_top.v",
-                    "rtl/matmul_core.v", "rtl/axi4_slave_reg.v",
-                    "rtl/axi4s_reg.v", "rtl/axi4_master.v",
-                    "rtl/f32_mul.v", "rtl/f32_add.v"], None),
+    # e2e 才是它現在維護的整合測試（tb_matmul_top.v 是 04:18 的舊版）。
+    # 資料檔用相對路徑，必須在 out/ 跑，不然全是 x —— 看起來完全像 RTL 壞掉。
+    "matmul_top_e2e": ("tb_matmul_top_e2e",
+                       ["tb/tb_matmul_top_e2e.v", "rtl/matmul_top.v",
+                        "rtl/matmul_core.v", "rtl/axi4_slave_reg.v",
+                        "rtl/axi4s_reg.v", "rtl/axi4_master.v",
+                        "rtl/async_fifo.v",
+                        "rtl/f32_mul.v", "rtl/f32_add.v"], "out"),
 }
 
 
@@ -74,7 +77,7 @@ def sig():
     return h.hexdigest()[:12]
 
 
-def run(cmd, cwd=None, timeout=300):
+def run(cmd, cwd=None, timeout=600):
     try:
         r = subprocess.run(cmd, cwd=cwd, timeout=timeout,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -96,7 +99,8 @@ def check_unit(name):
     out = os.path.join(os.environ.get("TEMP", HERE), "wp_%s.vvp" % name)
     rc, log = run([tool("iverilog"), "-g2012", "-o", out, "-s", top] + paths,
                   cwd=HERE)
-    warns = len(re.findall(r"[Tt]runcated|[Ii]nferring latch|implicit", log))
+    warns = len(re.findall(
+        r"[Tt]runcated|[Ii]nferring latch|implicit|Pruning \d+ high bits", log))
     if rc != 0:
         nerr = len(re.findall(r"error", log))
         first = ""
@@ -142,8 +146,12 @@ def gate_status():
             uniq.append(r)
     covers = len([r for r in uniq if "never reported a COVER" in r
                   or "never exercised" in r])
+    # 編譯失敗時 gate 只會報 compile error，沒有 cover 可缺 ——
+    # 那時候 missing_covers=0 是「沒跑」不是「補齊了」，要標出來。
+    compile_broken = any("compile" in r for r in uniq)
     return {"state": "pass" if rc == 0 else "fail",
-            "nfail": len(uniq), "missing_covers": covers}
+            "nfail": len(uniq), "missing_covers": covers,
+            "not_run": compile_broken}
 
 
 def snapshot():
@@ -174,10 +182,13 @@ def fmt(rec):
         else:
             parts.append("%s:%s" % (name, s))
     g = rec["gate"]
-    parts.append("gate:%s" % g.get("state")
-                 + ("(%d fail,%d cover)" % (g.get("nfail", 0),
-                                            g.get("missing_covers", 0))
-                    if g.get("state") == "fail" else ""))
+    if g.get("state") == "fail":
+        detail = "(%d fail,%d cover%s)" % (
+            g.get("nfail", 0), g.get("missing_covers", 0),
+            ",NOT_RUN" if g.get("not_run") else "")
+    else:
+        detail = ""
+    parts.append("gate:%s%s" % (g.get("state"), detail))
     return "%s  %s" % (rec["t"], "  ".join(parts))
 
 

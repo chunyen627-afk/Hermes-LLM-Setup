@@ -3,10 +3,17 @@
 橋接器改了程式碼要重啟才生效，但模型正在推理時重啟會切斷它的請求。
 這支會等到安全時機（模型沒在推理、而且已經安靜一段時間）才動手。
 
+它一輪接一輪時「完全閒置」可能永遠等不到，所以有兩條觸發路徑：
+  A. 完全閒置 —— 零損失，最理想
+  B. 正在推理但「剛起步」 —— 重算量還很小，切掉只丟幾百個 token
+
+橋接器是 HTTP 代理，切斷的只是當下那一次請求，不是整個 session；
+已經寫進磁碟的檔案完全不受影響。
+
 安全檢查：
-  1. 上游 slot 全部 is_processing=False
-  2. 連續 STABLE_CHECKS 次檢查都閒置（避免抓到兩輪之間的空檔）
-  3. 目前只有一個 hermes_bridge 行程（多個就停手，讓人來看）
+  1. 兩條路徑都要連續觀察數次才動手（避免抓到瞬間的假象）
+  2. 目前只有一個 hermes_bridge 行程（多個就停手，讓人來看）
+  3. 用 taskkill /PID 指定行程，絕不用 /IM（會波及其他 python）
 
 用法：
     python _restart_bridge_when_idle.py            → 等到閒置就重啟
@@ -27,9 +34,19 @@ BRIDGE = os.path.join(HERE, "hermes_bridge.py")
 LAUNCHER = os.path.join(HERE, "BRIDGE-AUTORESUME.bat")
 UP = "http://127.0.0.1:8001"
 
-POLL_SEC = 30
-STABLE_CHECKS = 4          # 連續幾次都閒置才算真的閒下來（4 x 30s = 2 分鐘）
+POLL_SEC = 20
+STABLE_CHECKS = 3          # 連續幾次都閒置才算真的閒下來
 MAX_WAIT_HOURS = 12
+
+# 「等完全閒置」在它一輪接一輪時可能永遠等不到。
+# 橋接器是 HTTP 代理，切斷的只是「當下那一次請求」——
+# 損失 = 那次請求已經生成了多少，不是整個 session。
+#
+# 判斷損失：n_prompt_tokens_processed 是這次真正重算的 prompt 量。
+# 值很小 = 剛開始（prompt 幾乎全命中快取，還在 prefill），生成的內容還少 → 切了不痛。
+# 值很大 = 正在處理大量新內容，或已經生成很久 → 等一下。
+LOW_LOSS_PROCESSED = 8000   # 重算量低於這個就算「剛起步」
+LOW_LOSS_CHECKS = 2         # 連續幾次都在低損失窗口
 
 
 def log(msg):
@@ -39,20 +56,29 @@ def log(msg):
 
 
 def slots_busy():
-    """回傳 (busy, detail)。連不到上游時回 (None, 原因)。"""
+    """回傳 (busy, detail, processed)。
+
+    processed = 忙碌 slot 這次重算的 prompt 量，用來估切斷的損失。
+    連不到上游時回 (None, 原因, 0)。
+    """
     try:
         with urllib.request.urlopen(UP + "/slots", timeout=8) as r:
             slots = json.loads(r.read().decode("utf-8")) or []
     except Exception as e:
-        return None, "連不到 %s：%s" % (UP, e)
+        return None, "連不到 %s：%s" % (UP, e), 0
     if not slots:
-        return None, "上游沒有回報任何 slot"
-    busy = [i for i, s in enumerate(slots) if s.get("is_processing")]
+        return None, "上游沒有回報任何 slot", 0
+    busy = [s for s in slots if s.get("is_processing")]
+    processed = max((s.get("n_prompt_tokens_processed") or 0)
+                    for s in busy) if busy else 0
     detail = "、".join(
-        "slot %d %s %d/%d" % (i, "推理中" if s.get("is_processing") else "閒置",
-                              s.get("n_prompt_tokens") or 0, s.get("n_ctx") or 0)
+        "slot %d %s %d/%d%s" % (
+            i, "推理中" if s.get("is_processing") else "閒置",
+            s.get("n_prompt_tokens") or 0, s.get("n_ctx") or 0,
+            "(重算 %d)" % (s.get("n_prompt_tokens_processed") or 0)
+            if s.get("is_processing") else "")
         for i, s in enumerate(slots))
-    return (len(busy) > 0), detail
+    return (len(busy) > 0), detail, processed
 
 
 def bridge_pids():
@@ -98,7 +124,7 @@ def main():
     a = ap.parse_args()
 
     pids = bridge_pids()
-    busy, detail = slots_busy()
+    busy, detail, processed = slots_busy()
 
     log("橋接器行程：%s" % (", ".join(str(p) for p in pids) or "（沒有）"))
     log("上游狀態：%s" % detail)
@@ -111,37 +137,55 @@ def main():
     if a.check:
         if busy is None:
             log("→ 無法判斷（上游連不到）")
+        elif busy and processed <= LOW_LOSS_PROCESSED:
+            log("→ 損失小可以重啟：正在推理但只重算了 %d 個 token"
+                "（剛起步，切了不痛）" % processed)
         elif busy:
-            log("→ 現在不能重啟：模型正在推理")
+            log("→ 建議再等：重算量 %d 已超過 %d，切了會丟掉較多"
+                % (processed, LOW_LOSS_PROCESSED))
         else:
-            log("→ 現在可以重啟")
+            log("→ 完全閒置，隨時可重啟")
         return 0
 
     if a.now:
         log("--now：跳過等待直接重啟")
         return restart(pids)
 
+    # 兩條路都可以觸發重啟：
+    #   A. 完全閒置（最理想，零損失）
+    #   B. 正在推理但重算量很小 = 剛起步，切掉只丟幾百個 token
+    # 它一輪接一輪時 A 可能永遠等不到，B 讓等待有終點。
     deadline = time.time() + MAX_WAIT_HOURS * 3600
     stable = 0
+    lowloss = 0
     while time.time() < deadline:
-        busy, detail = slots_busy()
+        busy, detail, processed = slots_busy()
         if busy is None:
             log("等待中（%s）" % detail)
-            stable = 0
+            stable = lowloss = 0
         elif busy:
-            if stable:
-                log("又開始推理了，重新計時")
             stable = 0
+            if processed <= LOW_LOSS_PROCESSED:
+                lowloss += 1
+                log("低損失窗口 %d/%d：重算才 %d 個 token（%s）"
+                    % (lowloss, LOW_LOSS_CHECKS, processed, detail))
+                if lowloss >= LOW_LOSS_CHECKS:
+                    log("這一輪才剛起步，現在切損失最小 —— 開始重啟")
+                    return restart(bridge_pids())
+            else:
+                if lowloss:
+                    log("重算量升到 %d，離開低損失窗口" % processed)
+                lowloss = 0
         else:
+            lowloss = 0
             stable += 1
             log("閒置 %d/%d（%s）" % (stable, STABLE_CHECKS, detail))
             if stable >= STABLE_CHECKS:
-                log("模型已閒置 %d 分鐘，開始重啟"
-                    % (STABLE_CHECKS * POLL_SEC // 60))
+                log("模型已完全閒置，零損失重啟")
                 return restart(bridge_pids())
         time.sleep(POLL_SEC)
 
-    log("等超過 %d 小時仍未閒置，放棄。" % MAX_WAIT_HOURS)
+    log("等超過 %d 小時都沒有適合的時機，放棄。" % MAX_WAIT_HOURS)
     return 1
 
 

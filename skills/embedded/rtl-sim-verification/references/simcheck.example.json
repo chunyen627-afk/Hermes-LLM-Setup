@@ -73,9 +73,9 @@
     },
 
     "matmul_top": {
-      "status": "pending",
+      "status": "in_progress",
       "stage": "3_integration",
-      "blocked_by": "axi4_master 階段 2 未過",
+      "blocked_by": "axi4_master 階段 2 未過; 記憶體模型過於理想化",
       "note": "register map + AXI master + core 整合, end-to-end vs C oracle",
       "tb": "tb/tb_matmul_top.v",
       "src": [
@@ -91,7 +91,11 @@
         "end_to_end_match",
         "weights_from_ddr",
         "result_written_back",
-        "status_polling"
+        "status_polling",
+        "mem_latency_jitter",
+        "mem_backpressure",
+        "mem_refresh_stall",
+        "mem_read_write_turnaround"
       ]
     },
 
@@ -123,6 +127,10 @@
     "weights_from_ddr": "權重真的從 AXI 讀進來 (不是 $readmemh 抄捷徑) 的次數",
     "result_written_back": "xout 真的透過 AXI 寫回去的次數",
     "status_polling": "透過 register map 讀 STATUS 等到 done 的次數",
+    "mem_latency_jitter": "記憶體回應延遲不是固定值的次數 - 真 DDR4 的 row hit(~15ns) 與 row miss(precharge+activate ~45ns) 差三倍, 固定延遲測不出 outstanding 管理的問題",
+    "mem_backpressure": "記憶體把 arready/awready 拉低的拍數 - MIG 命令佇列滿時會反壓, 恆為 1 等於這條路徑沒測過",
+    "mem_refresh_stall": "記憶體插入長停頓(模擬 refresh)的次數 - 真 DDR4 每 7.8us 強制 refresh 期間不能存取, 會不會讓計數器溢位或 FSM 卡死",
+    "mem_read_write_turnaround": "讀寫方向切換時額外延遲的次數 - 匯流排轉向有損失, 連續同向與交錯的行為不同",
     "slow_to_fast": "慢時脈域送到快時脈域的傳輸數",
     "fast_to_slow": "快到慢的傳輸數",
     "fifo_full": "FIFO 滿並產生反壓的次數",

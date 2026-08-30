@@ -73,41 +73,75 @@
     },
 
     "matmul_top": {
-      "status": "pending",
+      "status": "in_progress",
       "stage": "3_integration",
-      "blocked_by": "axi4_master 階段 2 未過",
+      "blocked_by": "axi4_master 階段 2 未過; 記憶體模型過於理想化",
       "note": "register map + AXI master + core 整合, end-to-end vs C oracle",
-      "tb": "tb/tb_matmul_top.v",
+      "_gotcha": "tb_matmul_top.v 是 04:18 的舊版, 現在維護的是 _e2e; 資料檔用相對路徑必須在 out/ 跑",
+      "tb": "tb/tb_matmul_top_e2e.v",
       "src": [
         "rtl/matmul_top.v",
         "rtl/matmul_core.v",
         "rtl/axi4_slave_reg.v",
+        "rtl/axi4s_reg.v",
         "rtl/axi4_master.v",
+        "rtl/async_fifo.v",
         "rtl/f32_mul.v",
         "rtl/f32_add.v"
       ],
-      "top": "tb_matmul_top",
+      "top": "tb_matmul_top_e2e",
+      "run_in": "out",
       "require_cover": [
         "end_to_end_match",
         "weights_from_ddr",
         "result_written_back",
-        "status_polling"
+        "status_polling",
+        "mem_latency_jitter",
+        "mem_backpressure",
+        "mem_refresh_stall",
+        "mem_read_write_turnaround"
       ]
     },
 
     "cdc": {
-      "status": "pending",
+      "status": "done",
       "stage": "2_interface",
-      "note": "async FIFO + gray-pointer sync, 跨時脈域控制",
-      "tb": "tb/tb_cdc.v",
-      "src": ["rtl/cdc_fifo.v"],
-      "top": "tb_cdc",
+      "note": "async FIFO: gray pointer + 兩級同步, 資料走 dual-port RAM。2000 words 0 errors, 變異測試驗證過",
+      "tb": "tb/tb_async_fifo.v",
+      "src": ["rtl/async_fifo.v"],
+      "top": "tb_async_fifo",
       "require_cover": [
         "slow_to_fast",
         "fast_to_slow",
         "fifo_full",
         "fifo_empty",
         "reset_during_traffic"
+      ]
+    },
+
+    "matmul_top_cdc": {
+      "status": "in_progress",
+      "stage": "3_integration",
+      "note": "x 經 async FIFO 跨時脈域的 end-to-end, 288/288 vs C oracle",
+      "_gotcha": "資料檔用相對路徑, 必須在 out/ 跑",
+      "tb": "tb/tb_matmul_top_cdc.v",
+      "src": [
+        "rtl/matmul_top.v",
+        "rtl/matmul_core.v",
+        "rtl/axi4_slave_reg.v",
+        "rtl/axi4s_reg.v",
+        "rtl/axi4_master.v",
+        "rtl/async_fifo.v",
+        "rtl/f32_mul.v",
+        "rtl/f32_add.v"
+      ],
+      "top": "tb_matmul_top_cdc",
+      "run_in": "out",
+      "require_cover": [
+        "end_to_end_match",
+        "cdc_crossing",
+        "mem_latency_jitter",
+        "mem_backpressure"
       ]
     }
   },
@@ -123,6 +157,11 @@
     "weights_from_ddr": "權重真的從 AXI 讀進來 (不是 $readmemh 抄捷徑) 的次數",
     "result_written_back": "xout 真的透過 AXI 寫回去的次數",
     "status_polling": "透過 register map 讀 STATUS 等到 done 的次數",
+    "cdc_crossing": "資料真的經過 async FIFO 跨時脈域的次數 - 若兩邊同頻或走了旁路, 等於 CDC 沒被測到",
+    "mem_latency_jitter": "記憶體回應延遲不是固定值的次數 - 真 DDR4 的 row hit(~15ns) 與 row miss(precharge+activate ~45ns) 差三倍, 固定延遲測不出 outstanding 管理的問題",
+    "mem_backpressure": "記憶體把 arready/awready 拉低的拍數 - MIG 命令佇列滿時會反壓, 恆為 1 等於這條路徑沒測過",
+    "mem_refresh_stall": "記憶體插入長停頓(模擬 refresh)的次數 - 真 DDR4 每 7.8us 強制 refresh 期間不能存取, 會不會讓計數器溢位或 FSM 卡死",
+    "mem_read_write_turnaround": "讀寫方向切換時額外延遲的次數 - 匯流排轉向有損失, 連續同向與交錯的行為不同",
     "slow_to_fast": "慢時脈域送到快時脈域的傳輸數",
     "fast_to_slow": "快到慢的傳輸數",
     "fifo_full": "FIFO 滿並產生反壓的次數",
