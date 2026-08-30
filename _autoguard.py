@@ -296,10 +296,17 @@ DONE_RE = re.compile(
     r"全部完成|都完成了|任務完成|全部通過|已全部|大功告成|"
     r"ALL_PASS|ALL_INDEPENDENT_CHECKS_PASS", re.I)
 
-# 它在求助 —— 需要人介入，自動接續只會空轉
+# 它在求助 —— 需要人介入，自動接續只會空轉。
+#
+# ⚠ 只認「真的走不下去」的說法，不要抓到章節標題。
+# 收尾報告常有「## 下一步 / 需要你決定的」這種段落，
+# 那是在**列出待決策事項**（例如要不要裝 Vivado），不是求助 ——
+# 把它當求助會讓每次正常收尾都被判定成卡住。
 HELP_RE = re.compile(
-    r"我卡住|需要你決定|請告訴我|無法繼續|需要更多資訊|"
-    r"i'?m stuck|need your input|cannot proceed", re.I)
+    r"我卡住了|我卡住$|卡住了[，。\s]|無法繼續|做不下去|"
+    r"需要更多資訊才能|沒有辦法繼續|"
+    r"i'?m stuck|i am stuck|cannot proceed|unable to (continue|proceed)",
+    re.I | re.M)
 
 
 def decide():
