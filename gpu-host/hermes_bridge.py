@@ -9,6 +9,20 @@ WATCH = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 # 單輪輸出上限，防止模型卡在自我重複時燒掉幾十分鐘 GPU。
 # 正常回合幾百到幾千 token 就夠，8192 綽綽有餘。
 MAX_OUT = 8192
+# 閒置多久之後開始報「沒有新請求」。橋接器只在有請求時才印東西，
+# 停了就整片安靜 —— 分不出「還在想」和「已經停了」。
+IDLE_REPORT_SEC = 120
+_last_req = 0.0
+_idle_reported = False
+
+# 偵測到任務停掉時，要不要自動接續。
+# 預設關閉 —— 這會在你不在場時執行外部程式跑新任務，判斷錯就會亂跑。
+# 要開：設環境變數 HERMES_AUTORESUME=1（或桌面的「自動接續」捷徑）
+AUTORESUME = os.environ.get('HERMES_AUTORESUME', '') == '1'
+AUTORELAY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         '_autorelay.py')
+_autoresume_count = 0
+AUTORESUME_MAX = 5          # 最多自動接續幾次，防無限迴圈
 # 圖片是否要先繞道 Gemini 轉成文字。模型掛了 mmproj 之後應該是 False，
 # 否則圖會在這裡被抽掉，本地視覺等於沒開。
 STRIP_IMAGES = False
@@ -198,6 +212,9 @@ class B(http.server.BaseHTTPRequestHandler):
         except Exception:
             info = ''
         print(f'[{_n:>4}] 本機推論 OK  {dt:.1f}s{info}', flush=True)
+        global _last_req, _idle_reported
+        _last_req = time.time()
+        _idle_reported = False
         if WATCH > 0 and _n % WATCH == 0:
             _watch_once()
 
@@ -313,8 +330,269 @@ except Exception as e:
     input('\n按 Enter 關閉...')
     sys.exit(1)
 
-if WATCH > 0:
-    pass      # 改成推論驅動，不需要背景定時執行緒
+def _find_project(sid):
+    """從它這輪寫過的檔案往上找專案根目錄。
+
+    不用 session 的 cwd —— 那是 CLI 的啟動目錄，通常不是專案所在。
+    以「有 HANDOFF.md 或 ARCHITECTURE.md」當專案根的判準。
+    """
+    import sqlite3
+    db = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'hermes', 'state.db')
+    try:
+        c = sqlite3.connect(db)
+        rows = c.execute(
+            "SELECT coalesce(content,'') FROM messages "
+            "WHERE session_id=? AND role='tool' "
+            "ORDER BY rowid DESC LIMIT 120", (sid,)).fetchall()
+        c.close()
+    except Exception:
+        return ''
+    roots = {}
+    for (t,) in rows:
+        for m in re.finditer(r'"resolved_path":\s*"([^"]+)"', t):
+            d = os.path.dirname(m.group(1).replace('\\\\', '\\'))
+            for _ in range(4):
+                if not d or not os.path.isdir(d):
+                    break
+                if os.path.exists(os.path.join(d, 'HANDOFF.md')) or \
+                   os.path.exists(os.path.join(d, 'ARCHITECTURE.md')):
+                    roots[d] = roots.get(d, 0) + 1
+                    break
+                d = os.path.dirname(d)
+    return max(roots, key=roots.get) if roots else ''
+
+
+def _open_menu(reason, project):
+    """另開一個 console 視窗跳選單。
+
+    橋接器自己是背景執行的（Hermes 一直在打它的 API），
+    視窗讀不到鍵盤，所以選單要獨立開一個視窗。
+    """
+    menu = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        '_stopmenu.py')
+    if not os.path.exists(menu):
+        return
+    try:
+        subprocess.Popen(
+            ['cmd', '/c', 'start', '', sys.executable, menu,
+             '--reason', reason, '--project', project or ''],
+            shell=False)
+        print('       ★ 已跳出選單視窗 —— 選一個數字就好，'
+              '不用記指令。', flush=True)
+    except Exception as e:
+        print(f'       （選單開不起來：{str(e)[:60]}）', flush=True)
+
+
+def _suggest_next(sid):
+    """任務正常結束時，掃一遍實際狀態，告訴使用者該做什麼。
+
+    判斷依據是「檔案和資料庫裡的事實」，不是模型自己的說法 ——
+    它說「全部完成」不代表真的完成。
+    """
+    import sqlite3
+    db = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'hermes', 'state.db')
+    tips = []
+
+    # 1. 它最後講了什麼（只取結論那幾行，不是整篇）
+    last = ''
+    try:
+        c = sqlite3.connect(db)
+        r = c.execute(
+            "SELECT coalesce(content,'') FROM messages "
+            "WHERE session_id=? AND role='assistant' "
+            "ORDER BY rowid DESC LIMIT 1", (sid,)).fetchone()
+        c.close()
+        last = (r[0] or '') if r else ''
+    except Exception:
+        pass
+
+    # 2. 它自己有沒有說還沒做完
+    if re.search(r'尚未完成|還沒|沒做到|卡住|failed|FAIL|未完成', last, re.I):
+        tips.append('它自己說有沒做完的部分 —— 看一下最後那則訊息再決定')
+
+    cwd_hint = _find_project(sid)
+    if cwd_hint and not os.path.exists(os.path.join(cwd_hint, 'HANDOFF.md')):
+        tips.append(f'沒有 HANDOFF.md —— 接續前先叫它寫一份（{cwd_hint}）')
+
+    if tips:
+        print('       注意：', flush=True)
+        for t in tips:
+            print(f'         - {t}', flush=True)
+
+    _act_on_stop('done', cwd_hint, sid)
+
+
+def _handle_stop():
+    """任務停掉時：判斷是「撞上限」還是「真的做完」，決定要不要接續。
+
+    撞上限 = 還沒做完，可以用它自己寫的交接報告接續。
+    正常結束 = 它講完收尾了，不該自動再派工。
+    """
+    global _autoresume_count
+    if not os.path.exists(AUTORELAY):
+        return
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('_ar', AUTORELAY)
+        ar = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ar)
+        sid = ar.latest_cli_session()
+        report = ar.hit_limit(sid) if sid else None
+    except Exception as e:
+        print(f'       （判斷停止原因時出錯：{str(e)[:60]}）', flush=True)
+        return
+
+    if not report:
+        print('       原因：正常結束（不是撞上限）。', flush=True)
+        _suggest_next(sid)
+        return
+
+    print('       原因：撞到工具呼叫上限，任務其實還沒做完。', flush=True)
+    _act_on_stop('limit', _find_project(sid), sid)
+    return
+
+def _act_on_stop(reason, project, sid):
+    """任務停了要做什麼：自動模式先問防呆守衛，手動模式跳選單。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    guard = os.path.join(here, '_autoguard.py')
+    menu = os.path.join(here, '_stopmenu.py')
+
+    _print_session_summary(sid, project)
+
+    if not AUTORESUME:
+        if os.path.exists(menu):
+            try:
+                subprocess.Popen(
+                    ['cmd', '/c', 'start', '', sys.executable, menu,
+                     '--reason', reason, '--project', project or ''])
+                print('       ★ 已跳出選單視窗 —— 按 Enter 用預設就好。',
+                      flush=True)
+            except Exception as e:
+                print(f'       （選單開不起來：{str(e)[:60]}）', flush=True)
+        return
+
+    # 全自動：先過防呆
+    if os.path.exists(guard):
+        try:
+            r = subprocess.run(
+                [sys.executable, guard, '--json', '--commit'],
+                capture_output=True, text=True, timeout=60)
+            info = json.loads((r.stdout or '{}').strip().splitlines()[-1])
+        except Exception as e:
+            print(f'       防呆檢查出錯，保守起見不自動接續：{str(e)[:60]}',
+                  flush=True)
+            return
+        if not info.get('go'):
+            print(f'       [防呆] 不自動接續 —— {info.get("reason","")}',
+                  flush=True)
+            print('       要手動處理的話，跑 _stopmenu.py 或直接派新任務。',
+                  flush=True)
+            return
+        print(f'       [防呆] 通過 —— {info.get("reason","")}', flush=True)
+
+    print('       ★ 自動接續中…', flush=True)
+    try:
+        subprocess.Popen(
+            ['cmd', '/c', 'start', '', sys.executable, menu,
+             '--reason', reason, '--project', project or '', '--auto'])
+    except Exception as e:
+        print(f'       接續失敗：{str(e)[:80]}', flush=True)
+
+
+def _print_session_summary(sid, project):
+    """把上一輪做了什麼印出來，讓使用者一眼看懂現在的狀況。"""
+    import sqlite3
+    db = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'hermes', 'state.db')
+    try:
+        c = sqlite3.connect(db)
+        s = c.execute(
+            'SELECT api_call_count, started_at, ended_at FROM sessions '
+            'WHERE id=?', (sid,)).fetchone()
+        rows = c.execute(
+            "SELECT coalesce(tool_name,''), coalesce(content,'') "
+            "FROM messages WHERE session_id=? AND role='tool'",
+            (sid,)).fetchall()
+        last = c.execute(
+            "SELECT coalesce(content,'') FROM messages WHERE session_id=? "
+            "AND role='assistant' ORDER BY rowid DESC LIMIT 1",
+            (sid,)).fetchone()
+        c.close()
+    except Exception:
+        return
+
+    calls = s[0] if s else '?'
+    mins = ((s[2] or time.time()) - s[1]) / 60 if s and s[1] else 0
+    files, tools = set(), {}
+    for name, content in rows:
+        tools[name] = tools.get(name, 0) + 1
+        for m in re.finditer(r'"resolved_path":\s*"([^"]+)"', content):
+            files.add(os.path.basename(m.group(1).replace('\\\\', '\\')))
+
+    print('       ── 上一輪做了什麼 ' + '─' * 30, flush=True)
+    print(f'       時間 {mins:.0f} 分鐘 / 工具呼叫 {calls} 次 / '
+          f'動了 {len(files)} 個檔案', flush=True)
+    if project:
+        print(f'       專案 {project}', flush=True)
+    if tools:
+        top = sorted(tools.items(), key=lambda kv: -kv[1])[:5]
+        print('       主要動作 ' + '、'.join(f'{k}×{v}' for k, v in top),
+              flush=True)
+    if files:
+        shown = sorted(files)[:8]
+        print('       檔案 ' + '、'.join(shown)
+              + (f' …等 {len(files)} 個' if len(files) > 8 else ''),
+              flush=True)
+    if last and last[0]:
+        head = [l.strip() for l in last[0].splitlines() if l.strip()][:3]
+        print('       它最後說：', flush=True)
+        for h in head:
+            print(f'         {h[:76]}', flush=True)
+    print('       ' + '─' * 48, flush=True)
+
+
+def _idle_watch():
+    """定期回報「有沒有在跑」。
+
+    橋接器原本只在有請求時才印東西，任務停了就整片安靜 ——
+    使用者分不出「模型還在想」和「任務已經結束」。
+    這裡每 IDLE_REPORT_SEC 秒檢查一次，閒置就明講。
+    """
+    global _idle_reported
+    while True:
+        time.sleep(30)
+        try:
+            if _last_req <= 0:
+                continue
+            idle = time.time() - _last_req
+            if idle < IDLE_REPORT_SEC:
+                continue
+
+            # 上游 slot 還在跑嗎？跑著就是「在想」，沒跑就是「真的停了」
+            busy = None
+            try:
+                with urllib.request.urlopen(UP + '/slots', timeout=8) as r:
+                    slots = json.loads(r.read().decode('utf-8')) or []
+                busy = any(s.get('is_processing') for s in slots)
+            except Exception:
+                pass
+
+            ts = time.strftime('%H:%M:%S')
+            if busy:
+                # 還在推理，只是這一輪很長（長任務常見）
+                print(f'[idle] {ts} 已 {idle/60:.0f} 分鐘沒有新請求，'
+                      f'但模型仍在推理中（同一輪還沒結束）', flush=True)
+                _idle_reported = False
+            elif not _idle_reported:
+                print(f'[STOP] {ts} 已 {idle/60:.0f} 分鐘沒有新請求，'
+                      f'而且模型也沒在推理 —— 任務應該已經結束或中斷了',
+                      flush=True)
+                _idle_reported = True     # 只報一次，不洗版
+                _handle_stop()
+        except Exception:
+            pass
+
+
+threading.Thread(target=_idle_watch, daemon=True).start()
 
 try:
     http.server.ThreadingHTTPServer(('127.0.0.1', 1234), B).serve_forever()
