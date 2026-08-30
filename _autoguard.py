@@ -196,6 +196,24 @@ def _prev_report(skip_sid):
     return ""
 
 
+def _pending_blocks(project):
+    """還沒開始做的 block（status=pending）。
+
+    simcheck --all 會跳過它們，所以「關卡全綠」可能是在
+    「一整塊還沒動」的情況下成立的。判斷收工要另外問這個。
+    """
+    if not project:
+        return []
+    cfg = os.path.join(project, "simcheck.json")
+    try:
+        with io.open(cfg, encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return []
+    return [k for k, v in (d.get("blocks") or {}).items()
+            if v.get("status") == "pending"]
+
+
 def _spec_only_check(cfg, project):
     """只做不需要跑模擬的檢查：規格書承諾的東西在不在原始碼裡。
 
@@ -406,8 +424,16 @@ def decide():
         gate_note = "；關卡未過：%s" % detail
     elif status == "pass":
         s["gate_override"] = 0    # 過了就把「宣告完成卻沒過」的計數清掉
-        return False, ("驗收關卡全綠 —— 這個專案的 block 都過了，收工。"
-                       "要繼續做別的就手動派新任務"), s
+        # ⚠ 「全綠」只代表跑過的 block 都過了 —— simcheck --all 會跳過
+        # status=pending 的 block（simcheck.py 那邊是刻意的：還沒開始做的
+        # 東西不該被當成失敗）。但那也表示「全綠」不等於「專案做完了」，
+        # 還有 pending 就繼續派工，否則會在缺一整塊的情況下收工。
+        todo = _pending_blocks(project)
+        if todo:
+            return True, ("關卡全綠，但還有沒做的 block：%s —— 繼續"
+                          % "、".join(todo[:4])), s
+        return False, ("驗收關卡全綠、沒有待做的 block —— 收工。"
+                       "要做別的就手動派新任務"), s
 
     return True, "檢查通過（第 %d 輪，上一輪 %s 次呼叫、動了 %d 個檔%s）" % (
         s.get("chain", 0) + 1, calls, nfiles, gate_note), s
