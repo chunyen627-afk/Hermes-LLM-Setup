@@ -12,6 +12,7 @@
 """
 
 import argparse
+import io
 import json
 import os
 import re
@@ -138,6 +139,46 @@ def find_project(sid):
     return max(roots, key=roots.get) if roots else ""
 
 
+def _spec_only_check(cfg, project):
+    """只做不需要跑模擬的檢查：規格書承諾的東西在不在原始碼裡。
+
+    完整 gate 要編譯+模擬每個 block，大專案好幾分鐘；橋接器等不了。
+    規格缺漏用 grep 就查得到，先擋這一關可以省掉絕大多數的等待。
+    """
+    try:
+        with io.open(cfg, encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return []
+    missing = []
+    for bname, b in (d.get("blocks") or {}).items():
+        if b.get("status") in ("pending", "skipped"):
+            continue
+        for label, item in (b.get("spec") or {}).items():
+            if isinstance(item, str):
+                item = {"pattern": item}
+            if item.get("skip"):
+                continue
+            pat = item.get("pattern") or label
+            files = item.get("in") or item.get("files") or []
+            if isinstance(files, str):
+                files = [files]
+            found = False
+            for rel in files:
+                try:
+                    txt = io.open(os.path.join(project, rel),
+                                  encoding="utf-8", errors="replace").read()
+                except (IOError, OSError):
+                    continue
+                if re.search(pat, txt):
+                    found = True
+                    break
+            if not found:
+                missing.append("%s 的 spec 項目 '%s' 在原始碼裡找不到"
+                               % (bname, label))
+    return missing
+
+
 def run_gate(project):
     """跑專案的驗收關卡。
 
@@ -153,6 +194,15 @@ def run_gate(project):
         return "absent", "專案沒有 simcheck.json"
     if not os.path.exists(SIMCHECK):
         return "absent", "找不到 simcheck.py"
+    # 完整 gate 要跑每個 block 的模擬，大專案可能好幾分鐘。
+    # 橋接器等在這裡會拖住整個接續流程，所以先用不跑模擬的靜態檢查
+    # （spec 項目、marker 有沒有寫）快速判斷；靜態就有問題的話直接回報，
+    # 不必等模擬跑完。
+    quick = _spec_only_check(cfg, project)
+    if quick:
+        return "fail", "；".join(quick[:4]) + (
+            "（另有 %d 項）" % (len(quick) - 4) if len(quick) > 4 else "")
+
     try:
         r = subprocess.run(
             [sys.executable, SIMCHECK, "--config", cfg, "--all"],
