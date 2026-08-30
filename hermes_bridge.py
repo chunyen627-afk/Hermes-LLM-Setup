@@ -11,12 +11,13 @@ WATCH = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 MAX_OUT = 8192
 # 閒置多久之後開始報「沒有新請求」。橋接器只在有請求時才印東西，
 # 停了就整片安靜 —— 分不出「還在想」和「已經停了」。
-IDLE_REPORT_SEC = 120
+IDLE_REPORT_SEC = 300
 _last_req = 0.0
 _idle_reported = False
 
 # 「模型還在推理」這種回報不需要每 30 秒一次 —— 長任務會洗版。
 # 間隔從 BUSY_REPORT_MIN 開始，每印一次就加倍，最多 BUSY_REPORT_MAX。
+# 注意 IDLE_REPORT_SEC 也要夠長，否則「第一則」還是會太早出現。
 BUSY_REPORT_MIN = 300      # 5 分鐘
 BUSY_REPORT_MAX = 900      # 15 分鐘
 _busy_gap = BUSY_REPORT_MIN
@@ -63,7 +64,12 @@ def _watch_once():
     if True:
         try:
             with urllib.request.urlopen(UP+'/slots', timeout=8) as r:
-                s = (json.loads(r.read().decode('utf-8')) or [{}])[0]
+                _all = json.loads(r.read().decode('utf-8')) or [{}]
+            # 共享模式有多個 slot，正在跑的不一定是 slot 0 ——
+            # 挑真正在用的那個，沒人在跑就挑吃最多 ctx 的（剛跑完那個）。
+            _busy = [x for x in _all if x.get('is_processing')]
+            s = max(_busy or _all, key=lambda x: x.get('n_prompt_tokens') or 0)
+            _idx = _all.index(s)
             n = s.get('n_ctx') or 0
             used = s.get('n_prompt_tokens') or 0
             cache = s.get('n_prompt_tokens_cache') or 0
@@ -72,7 +78,8 @@ def _watch_once():
             hit = cache * 100 // max(used, 1)
             busy = bool(s.get('is_processing'))
             state = '推理中' if busy else '閒置'
-            line = (f'[ctx ] {used:,} / {n:,} ({pct}%)  剩 {n-used:,}  '
+            _tag = f'slot{_idx} ' if len(_all) > 1 else ''
+            line = (f'[ctx ] {_tag}{used:,} / {n:,} ({pct}%)  剩 {n-used:,}  '
                     f'快取 {hit}%  重算 {proc:,}  {state}')
 
             task = s.get('id_task')
