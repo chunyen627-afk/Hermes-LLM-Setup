@@ -473,6 +473,12 @@ def _handle_stop():
     if not report:
         print('       原因：正常結束（不是撞上限）。', flush=True)
         _suggest_next(sid)
+        # 「正常結束」不等於「真的做完了」——
+        # 它自己認為完成，但驗收關卡可能不同意（規格沒實作、cover 沒跑到）。
+        # 所以這條路也要問防呆守衛：守衛會跑 gate，沒過就不採信它的宣告。
+        # 沒有這一步的話，autoguard 那道「宣告完成先驗證」永遠不會生效，
+        # 因為宣告完成的情況正好走這條路。
+        _act_on_stop('done', _find_project(sid), sid)
         return
 
     print('       原因：撞到工具呼叫上限，任務其實還沒做完。', flush=True)
