@@ -20,6 +20,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "hermes", "state.db")
@@ -32,6 +33,7 @@ MAX_HOURS = 12           # 連續自動跑最多幾小時
 MIN_PROGRESS_CALLS = 5   # 一輪至少要有幾次工具呼叫才算「有在做事」
 COOLDOWN_SEC = 60        # 兩次接續之間至少間隔多久（防抖動迴圈）
 GATE_TIMEOUT = 900       # 跑驗收關卡最多等幾秒
+ZOMBIE_IDLE_MIN = 5      # session 標記為「跑著」但這麼久沒動靜 = 行程已死
 
 # 驗收關卡：專案根有 simcheck.json 時，它宣告完成必須通過才採信
 SIMCHECK = os.path.join(
@@ -137,6 +139,33 @@ def find_project(sid):
                     break
                 d = os.path.dirname(d)
     return max(roots, key=roots.get) if roots else ""
+
+
+def _last_activity(sid):
+    """這個 session 最後一次有動靜是什麼時候（訊息或 last_activity_at）。"""
+    try:
+        c = sqlite3.connect(DB)
+        r = c.execute(
+            "SELECT COALESCE(MAX(timestamp), 0) FROM messages "
+            "WHERE session_id=?", (sid,)).fetchone()
+        r2 = c.execute(
+            "SELECT COALESCE(last_activity_at, started_at) FROM sessions "
+            "WHERE id=?", (sid,)).fetchone()
+        c.close()
+        return max(r[0] if r else 0, r2[0] if r2 else 0)
+    except Exception:
+        return 0
+
+
+def _upstream_busy():
+    """上游 llama-server 有沒有在推理。連不到就當作沒在跑。"""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8001/slots",
+                                    timeout=5) as r:
+            slots = json.loads(r.read().decode("utf-8")) or []
+        return any(x.get("is_processing") for x in slots)
+    except Exception:
+        return False
 
 
 def _spec_only_check(cfg, project):
@@ -255,7 +284,16 @@ def decide():
     sid, calls, started, ended = sess
 
     if not ended:
-        return False, "上一個任務還在跑，不需要接續", s
+        # ended_at 是 NULL 不一定代表還在跑 —— 行程被砍掉（當機、關視窗、
+        # 手動 kill）時沒機會寫結束時間，session 會永遠停在「跑著」，
+        # 守衛就再也不會接續。用「上游有沒有在推理」和「多久沒動靜」
+        # 交叉判斷，兩個都說沒有才當成僵屍。
+        idle_min = (now - _last_activity(sid)) / 60
+        if idle_min > ZOMBIE_IDLE_MIN and not _upstream_busy():
+            log("[guard] session %s 標記為跑著，但已 %.0f 分鐘沒動靜"
+                "且上游閒置 —— 當成中斷處理" % (sid[:22], idle_min))
+        else:
+            return False, "上一個任務還在跑，不需要接續", s
 
     # 1. 冷卻：避免兩次接續之間抖動
     if now - s.get("last_run", 0) < COOLDOWN_SEC:
