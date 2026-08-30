@@ -394,14 +394,20 @@ def decide():
         else:
             return False, "上一輪沒留下像樣的收尾報告，接續會失去脈絡", s
 
-    # 9. 沒宣告完成時也看一眼關卡，把狀態寫進 log 當脈絡
+    # 9. 關卡全綠就是完成 —— 不管它用什麼措辭。
+    #
+    # 第 6 道靠 DONE_RE 比對「全部完成 / ALL_PASS」那些字串，
+    # 但它可能說「驗收關卡現在真的過了」「10/10 runs PASS」，
+    # 一個都配不到，於是走到這裡被當成「還沒做完」繼續接續。
+    # **判斷完成要看關卡，不要看它怎麼講** —— 措辭會變，exit code 不會。
     gate_note = ""
     status, detail = run_gate(project)
     if status == "fail":
         gate_note = "；關卡未過：%s" % detail
     elif status == "pass":
-        gate_note = "；關卡全綠"
         s["gate_override"] = 0    # 過了就把「宣告完成卻沒過」的計數清掉
+        return False, ("驗收關卡全綠 —— 這個專案的 block 都過了，收工。"
+                       "要繼續做別的就手動派新任務"), s
 
     return True, "檢查通過（第 %d 輪，上一輪 %s 次呼叫、動了 %d 個檔%s）" % (
         s.get("chain", 0) + 1, calls, nfiles, gate_note), s
