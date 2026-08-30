@@ -492,6 +492,7 @@ def _act_on_stop(reason, project, sid):
     menu = os.path.join(here, '_stopmenu.py')
 
     _print_session_summary(sid, project)
+    gate_reason = ''
 
     if not AUTORESUME:
         if os.path.exists(menu):
@@ -523,12 +524,16 @@ def _act_on_stop(reason, project, sid):
                   flush=True)
             return
         print(f'       [防呆] 通過 —— {info.get("reason","")}', flush=True)
+        gate_reason = info.get('reason', '')
 
     print('       ★ 自動接續中…', flush=True)
     try:
+        # 關卡的理由要傳下去寫進題目 —— 只印在 console 的話，
+        # 它下一輪不會知道自己被擋在哪，可能又跑去做別的。
         subprocess.Popen(
             ['cmd', '/c', 'start', '', sys.executable, menu,
-             '--reason', reason, '--project', project or '', '--auto'])
+             '--reason', reason, '--project', project or '',
+             '--gate-reason', gate_reason, '--auto'])
     except Exception as e:
         print(f'       接續失敗：{str(e)[:80]}', flush=True)
 
