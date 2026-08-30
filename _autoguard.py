@@ -158,6 +158,24 @@ def _last_activity(sid):
         return 0
 
 
+def _agent_running():
+    """有沒有 hermes chat 行程在跑。
+
+    比「多久沒動靜」可靠得多：長推理可以幾十分鐘不寫任何訊息，
+    但行程一定還在。行程不在 = 真的死了，不管 session 怎麼標記。
+    """
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+          "Where-Object { $_.CommandLine -like '*hermes*chat*' } | "
+          "Measure-Object | Select-Object -ExpandProperty Count")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           timeout=20)
+        return int(r.stdout.decode("utf-8", "replace").strip() or 0) > 0
+    except Exception:
+        return True    # 查不到就當它還在 —— 寧可不接續，也不要砍掉活的
+
+
 def _upstream_busy():
     """上游 llama-server 有沒有在推理。連不到就當作沒在跑。"""
     try:
@@ -342,7 +360,12 @@ def decide():
         # 守衛就再也不會接續。用「上游有沒有在推理」和「多久沒動靜」
         # 交叉判斷，兩個都說沒有才當成僵屍。
         idle_min = (now - _last_activity(sid)) / 60
-        if idle_min > ZOMBIE_IDLE_MIN and not _upstream_busy():
+        # 三個訊號都說「沒在跑」才當成僵屍：久沒動靜、GPU 閒置、
+        # 而且沒有 hermes chat 行程。前兩個會誤判長推理
+        #（昨晚有過 70 分鐘沒寫訊息但確實在做事的情況），
+        # 行程檢查是最直接的 —— 行程不在才是真的死了。
+        if (idle_min > ZOMBIE_IDLE_MIN and not _upstream_busy()
+                and not _agent_running()):
             log("[guard] session %s 標記為跑著，但已 %.0f 分鐘沒動靜"
                 "且上游閒置 —— 當成中斷處理" % (sid[:22], idle_min))
         else:
