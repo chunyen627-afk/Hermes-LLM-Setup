@@ -62,6 +62,9 @@ module tb_matmul_core #(
                  D, N, D - mismatches, D, mismatches);
         if (mismatches == 0) $display("ALL_PASS");
         else                 $display("HAS_FAILURES");
+        // ---- simcheck gate markers ----
+        $display("CHECK matmul_core %0d %0d", D, mismatches);
+        $display("SIMEND %s", (mismatches == 0) ? "ok" : "fail");
         $finish;
     end
 

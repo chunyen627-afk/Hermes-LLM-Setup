@@ -127,15 +127,19 @@ module axi4_master #(
     endfunction
 
     // burst length = min(page room, remaining beats in the transfer), as 9 bits.
-    // Uses full-width `remaining` (not an 8-bit slice) so a multiple-of-256
-    // transfer doesn't truncate to zero.
+    // The comparison must be done in FULL width (RD_LEN_W), not on a 9-bit slice:
+    // a large transfer (e.g. 2560 beats) has remaining[8:0] wrap to 0, which would
+    // make burst_len return 0 -> arlen = -1 = 255 (a bogus 256-beat burst). Since
+    // page_room is always <= MAX_BURST_BEATS (<= 128 < 512), the result fits in 9
+    // bits; we only need the full-width value to pick the correct minimum.
     function [8:0] burst_len;
         input [ADDR_WIDTH-1:0] addr;
         input [RD_LEN_W-1:0]   remaining;
         begin
             if (remaining == {RD_LEN_W{1'b0}})
                 burst_len = 9'd0;
-            else if (page_room_beats(addr) <= remaining[8:0])
+            else if ((remaining[RD_LEN_W-1:9] != 0) ||
+                     (page_room_beats(addr) <= remaining[8:0]))
                 burst_len = page_room_beats(addr);
             else
                 burst_len = remaining[8:0];
@@ -161,14 +165,23 @@ module axi4_master #(
 
     reg        rd_active;
     reg [ADDR_WIDTH-1:0] rd_next_addr;     // address of the next burst to push
-    reg [RD_LEN_W-1:0]   rd_issue_left;    // beats not yet issued
+    reg [RD_LEN_W-1:0]   rd_issued;        // beats already pushed into the FIFO
     reg [RD_LEN_W-1:0]   rd_total_beats;   // beats left in the transfer (for rd_last)
 
     wire rd_can_start = rd_start && !rd_active;
 
+    // remaining beats not yet issued, derived from a single counter so it always
+    // matches rd_next_addr (both advance by the same amount on each push). Using
+    // one source of truth avoids the off-by-one that arises when two registers are
+    // updated from a value computed in the same cycle.
+    wire [RD_LEN_W-1:0] rd_remaining = bytes_to_beats(rd_len_bytes) - rd_issued;
+
     // push one burst per cycle while there is room and beats remain to issue
-    wire rd_push = rd_active && (rd_issue_left > 0) && !rd_fifo_full;
-    wire [7:0] rd_push_beats = burst_len(rd_next_addr, rd_issue_left);
+    wire rd_push = rd_active && (rd_remaining > 0) && !rd_fifo_full;
+    wire [7:0] rd_push_beats = burst_len(rd_next_addr, rd_remaining);
+
+    // R-channel beat consumed this cycle (used for rd_last and to clear rd_active).
+    wire r_beat_consumed = m_axi_rvalid && m_axi_rready;
 
     always @(posedge aclk or negedge aresetn) begin
         if (!aresetn) begin
@@ -176,29 +189,34 @@ module axi4_master #(
             rd_rptr       <= {RD_FIFO_AW{1'b0}};
             rd_active     <= 1'b0;
             rd_next_addr  <= {ADDR_WIDTH{1'b0}};
-            rd_issue_left <= {RD_LEN_W{1'b0}};
+            rd_issued     <= {RD_LEN_W{1'b0}};
             rd_total_beats<= {RD_LEN_W{1'b0}};
         end else begin
             if (rd_can_start) begin
                 rd_active     <= 1'b1;
                 rd_next_addr  <= rd_addr;
-                rd_issue_left <= bytes_to_beats(rd_len_bytes);
+                rd_issued     <= {RD_LEN_W{1'b0}};
                 rd_total_beats<= bytes_to_beats(rd_len_bytes);
             end
             if (rd_push) begin
                 rd_addr_q[rd_wptr[RD_FIFO_AW-2:0]]  <= rd_next_addr;
                 rd_beats_q[rd_wptr[RD_FIFO_AW-2:0]] <= rd_push_beats;
                 rd_wptr       <= rd_wptr + 1'b1;
+                // advance the running address and issued count together so they
+                // stay in lockstep (rd_remaining is recomputed from rd_issued).
                 rd_next_addr  <= rd_next_addr + (rd_push_beats << BB_SHIFT);
-                rd_issue_left <= rd_issue_left - rd_push_beats;
+                rd_issued     <= rd_issued + rd_push_beats;
             end
             if (m_axi_arvalid && m_axi_arready)
                 rd_rptr <= rd_rptr + 1'b1;
-            // clear rd_active when the final beat of the transfer is consumed so
-            // the next read can start. (rd_total_beats is decremented in the R
-            // forwarding block; ==1 here means this accepted beat is the last.)
-            if (rd_active && m_axi_rvalid && m_axi_rready && (rd_total_beats == 8'd1))
-                rd_active <= 1'b0;
+            // decrement the transfer beat count as R beats are consumed, and clear
+            // rd_active when the final beat of the transfer is consumed so the next
+            // read can start. (rd_total_beats is owned ONLY by this block.)
+            if (r_beat_consumed) begin
+                rd_total_beats <= rd_total_beats - 1'b1;
+                if (rd_active && (rd_total_beats == 20'd1))
+                    rd_active <= 1'b0;
+            end
         end
     end
 
@@ -231,11 +249,12 @@ module axi4_master #(
             rd_last       <= 1'b0;
         end else begin
             if (m_axi_rvalid && m_axi_rready) begin
-                // accept a new beat from AXI into the output buffer
+                // accept a new beat from AXI into the output buffer.
+                // rd_total_beats is decremented in the read-engine block (single
+                // owner); here we only capture the last-beat flag for this beat.
                 rd_data        <= m_axi_rdata;
-                rd_last        <= (rd_total_beats == 8'd1);   // last beat of transfer
+                rd_last        <= (rd_total_beats == 20'd1);
                 rd_data_valid  <= 1'b1;
-                rd_total_beats <= rd_total_beats - 8'd1;
             end else if (rd_data_valid && rd_data_ready) begin
                 // consumer accepted the buffered beat
                 rd_data_valid <= 1'b0;

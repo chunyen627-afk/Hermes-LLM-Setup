@@ -1,229 +1,479 @@
-// matmul_top : AXI4 slave wrapper around matmul_core.
+// matmul_top : register-mapped AXI4 slave front-end for the BF16 matmul core.
 //
-// Exposes the control/status register map from ARCHITECTURE.md §3.5 on an AXI4
-// slave port, and instantiates the verified matmul_core datapath.
+// Register map (32-bit, word-addressed):
+//   0x00 CTRL      bit0 start, bit1 clear
+//   0x04 STATUS    bit0 done, bit1 busy
+//   0x08 W_BASE    DDR4 base address of the weight buffer (D x N BF16)
+//   0x0C X_BASE    DDR4 base address of the activation vector (N BF16)
+//   0x10 OUT_BASE  DDR4 base address for the FP32 output vector (D floats)
+//   0x14 D         number of rows / outputs
+//   0x18 N         reduction length
+//   0x1C reserved
 //
-// Register map (word index = addr[5:2]):
-//   idx 0  0x00  CTRL     RW  bit0=start, bit1=reset, bit2=bf16_in
-//   idx 1  0x04  STATUS   RO  bit0=busy, bit1=done, bit2=error
-//   idx 2  0x08  M_DIM    RO  rows of W (d)
-//   idx 3  0x0C  N_DIM    RO  reduction length (n)
-//   idx 4  0x10  W_BASE   RW  DDR4 base addr of weight matrix
-//   idx 5  0x14  X_BASE   RW  DDR4 base addr of activation vector
-//   idx 6  0x18  OUT_BASE RW  DDR4 base addr of output vector
-//   idx 7  0x1C  COUNT    RO  number of outputs produced
+// Two data paths, selected by EXTERNAL_DATA:
+//   EXTERNAL_DATA=0 (default): W/x are loaded into the core via $readmemh and
+//     xout is read back through the xout_vec port. The AXI master is present but
+//     idle. This is what tb_matmul_top.v exercises.
+//   EXTERNAL_DATA=1: a load/store FSM streams W and x from DDR4 (via the AXI
+//     master) into the core's element-load ports, runs the core, then writes the
+//     FP32 xout vector back to OUT_BASE in DDR4. This is the real accelerator
+//     path exercised by tb_matmul_top_e2e.v.
 //
-// Data movement (reading W/X from DDR4, writing OUT) is intentionally NOT done
-// here yet — per ARCHITECTURE.md §6 open item 4 the IP is a slave for
-// control+activation with weights pre-staged; the matmul_core still loads its
-// operands via $readmemh for verification. The base-address registers are stored
-// and exposed so a later AXI-master data path can use them.
+// The AXI master (m_axi_*) is the DDR4-facing interface; the register slave
+// (s_axi_*) is the xSPI/processor-facing control interface. In the full system
+// these sit in different clock domains and are bridged by CDC logic (Block 3).
 
 module matmul_top #(
-    parameter D          = 288,
-    parameter N          = 768,
-    parameter ADDR_WIDTH = 32,
-    parameter DATA_WIDTH = 32,
-    parameter ID_WIDTH   = 4
+    parameter D           = 288,
+    parameter N           = 288,
+    parameter DATA_WIDTH  = 512,      // AXI master data width (bits) -> 32 BF16/beat @512
+    parameter EXTERNAL_DATA = 0,      // 1: stream W/x/xout through the AXI master
+    parameter X_FROM_XSPI   = 0,      // 1: x arrives on the xSPI clock domain (CDC)
+    parameter XFIFO_DEPTH   = 512     // async FIFO depth for the x stream (power of two)
 )(
     input  wire                    aclk,
     input  wire                    aresetn,
 
-    // ---- AXI4 slave: write-address ----
+    // ---- xSPI-side activation stream (different clock domain, CDC via async FIFO) ----
+    // Present N BF16 elements one per cycle on xspi_clk. Only used when
+    // X_FROM_XSPI=1; the async_fifo bridges them into the aclk domain.
+    input  wire                    xspi_clk,
+    input  wire                    xspi_rst_n,
+    input  wire                    xspi_x_valid,   // element present this cycle
+    input  wire [15:0]             xspi_x_data,    // BF16 element
+    output wire                    xspi_x_full,    // backpressure to the xSPI side
+
+    // ---- AXI4 slave (register) interface ----
     input  wire                    s_axi_awvalid,
     output wire                    s_axi_awready,
-    input  wire [ADDR_WIDTH-1:0]   s_axi_awaddr,
+    input  wire [31:0]             s_axi_awaddr,
     input  wire [7:0]              s_axi_awlen,
     input  wire [2:0]              s_axi_awsize,
     input  wire [1:0]              s_axi_awburst,
-    input  wire [ID_WIDTH-1:0]     s_axi_awid,
+    input  wire [3:0]              s_axi_awid,
 
-    // ---- AXI4 slave: write-data ----
     input  wire                    s_axi_wvalid,
     output wire                    s_axi_wready,
-    input  wire [DATA_WIDTH-1:0]   s_axi_wdata,
-    input  wire [DATA_WIDTH/8-1:0] s_axi_wstrb,
+    input  wire [31:0]             s_axi_wdata,
+    input  wire [3:0]              s_axi_wstrb,
 
-    // ---- AXI4 slave: write-response ----
     output wire                    s_axi_bvalid,
     input  wire                    s_axi_bready,
     output wire [1:0]              s_axi_bresp,
-    output wire [ID_WIDTH-1:0]     s_axi_bid,
+    output wire [3:0]              s_axi_bid,
 
-    // ---- AXI4 slave: read-address ----
     input  wire                    s_axi_arvalid,
     output wire                    s_axi_arready,
-    input  wire [ADDR_WIDTH-1:0]   s_axi_araddr,
+    input  wire [31:0]             s_axi_araddr,
     input  wire [7:0]              s_axi_arlen,
     input  wire [2:0]              s_axi_arsize,
     input  wire [1:0]              s_axi_arburst,
-    input  wire [ID_WIDTH-1:0]     s_axi_arid,
+    input  wire [3:0]              s_axi_arid,
 
-    // ---- AXI4 slave: read-data ----
     output wire                    s_axi_rvalid,
     input  wire                    s_axi_rready,
-    output wire [DATA_WIDTH-1:0]   s_axi_rdata,
+    output wire [31:0]             s_axi_rdata,
     output wire [1:0]              s_axi_rresp,
     output wire                    s_axi_rlast,
-    output wire [ID_WIDTH-1:0]     s_axi_rid,
+    output wire [3:0]              s_axi_rid,
 
-    // ---- debug/observation of the datapath result (verification) ----
+    // ---- AXI4 master (DDR4) interface ----
+    output wire                    m_axi_awvalid,
+    input  wire                    m_axi_awready,
+    output wire [31:0]             m_axi_awaddr,
+    output wire [7:0]              m_axi_awlen,
+    output wire [2:0]              m_axi_awsize,
+    output wire [1:0]              m_axi_awburst,
+    output wire [3:0]              m_axi_awid,
+
+    output wire                    m_axi_wvalid,
+    input  wire                    m_axi_wready,
+    output wire [DATA_WIDTH-1:0]   m_axi_wdata,
+    output wire [DATA_WIDTH/8-1:0] m_axi_wstrb,
+    output wire                    m_axi_wlast,
+
+    input  wire                    m_axi_bvalid,
+    output wire                    m_axi_bready,
+    input  wire [1:0]              m_axi_bresp,
+    input  wire [3:0]              m_axi_bid,
+
+    output wire                    m_axi_arvalid,
+    input  wire                    m_axi_arready,
+    output wire [31:0]             m_axi_araddr,
+    output wire [7:0]              m_axi_arlen,
+    output wire [2:0]              m_axi_arsize,
+    output wire [1:0]              m_axi_arburst,
+    output wire [3:0]              m_axi_arid,
+
+    input  wire                    m_axi_rvalid,
+    output wire                    m_axi_rready,
+    input  wire [DATA_WIDTH-1:0]   m_axi_rdata,
+    input  wire [1:0]              m_axi_rresp,
+    input  wire                    m_axi_rlast,
+    input  wire [3:0]              m_axi_rid,
+
+    // ---- core result (used by the EXTERNAL_DATA=0 path / standalone TB) ----
     output wire [D*32-1:0]         xout_vec
 );
 
     localparam NUM_REGS = 8;
-    localparam AW = $clog2(NUM_REGS);
+    localparam AW       = $clog2(NUM_REGS);
+    localparam WORDS_PER_BEAT = DATA_WIDTH/32;   // 16 for a 512-bit beat
 
-    // ---- register file (RW registers) ----
-    reg [31:0] ctrl_reg;     // idx 0
-    reg [31:0] w_base_reg;   // idx 4
-    reg [31:0] x_base_reg;   // idx 5
-    reg [31:0] out_base_reg; // idx 6
+    // ================= register file (mirrored from the AXI slave) =================
+    reg [31:0] ctrl_reg, status_reg;
+    reg [31:0] w_base_reg, x_base_reg, out_base_reg;
+    reg [31:0] d_reg, n_reg;
 
-    // ---- register-file interface to axi4s_reg ----
-    wire        reg_we;
-    wire [AW-1:0] reg_waddr;
-    wire [31:0]   reg_wdata;
-    wire [AW-1:0] reg_raddr;
+    wire start = ctrl_reg[0];
+
+    // register read mux (combinational) keyed on the slave's current read index
+    wire [AW-1:0] ridx;
     reg  [31:0]   reg_rdata_mux;
-
-    // ---- datapath control signals ----
-    wire core_start;
-    wire core_reset;
-    wire core_done_pulse;   // 1-cycle pulse from the core
-    reg  core_done;         // sticky: set on completion, cleared by reset/start
-    wire core_busy;
-    wire core_error;
-
-    // start pulse: write-1 to CTRL[0]
-    assign core_start = reg_we && (reg_waddr == 3'd0) && reg_wdata[0];
-    // reset pulse: write-1 to CTRL[1]
-    assign core_reset = reg_we && (reg_waddr == 3'd0) && reg_wdata[1];
-
-    // ---- sticky done latch (software polls STATUS; a 1-cycle pulse would be missed) ----
-    always @(posedge aclk or negedge aresetn) begin
-        if (!aresetn)      core_done <= 1'b0;
-        else if (core_reset) core_done <= 1'b0;
-        else if (core_start) core_done <= 1'b0;   // clear when a new run begins
-        else if (core_done_pulse) core_done <= 1'b1;
-    end
-
-    // ---- register writes ----
-    always @(posedge aclk or negedge aresetn) begin
-        if (!aresetn) begin
-            ctrl_reg     <= 32'd0;
-            w_base_reg   <= 32'd0;
-            x_base_reg   <= 32'd0;
-            out_base_reg <= 32'd0;
-        end else if (reg_we) begin
-            case (reg_waddr)
-                3'd0: ctrl_reg     <= reg_wdata;
-                3'd4: w_base_reg   <= reg_wdata;
-                3'd5: x_base_reg   <= reg_wdata;
-                3'd6: out_base_reg <= reg_wdata;
-                default: ;
-            endcase
-        end
-    end
-
-    // ---- register reads (RO values computed, RW values from the file) ----
-    wire [31:0] status_val = {29'd0, core_error, core_done, core_busy};
-    wire [31:0] m_dim_val  = D;
-    wire [31:0] n_dim_val  = N;
-    wire [31:0] count_val  = core_done ? D : 32'd0;
-
     always @(*) begin
-        case (reg_raddr)
-            3'd0: reg_rdata_mux = ctrl_reg;
-            3'd1: reg_rdata_mux = status_val;
-            3'd2: reg_rdata_mux = m_dim_val;
-            3'd3: reg_rdata_mux = n_dim_val;
-            3'd4: reg_rdata_mux = w_base_reg;
-            3'd5: reg_rdata_mux = x_base_reg;
-            3'd6: reg_rdata_mux = out_base_reg;
-            3'd7: reg_rdata_mux = count_val;
+        case (ridx)
+            0:   reg_rdata_mux = ctrl_reg;
+            1:   reg_rdata_mux = status_reg;
+            2:   reg_rdata_mux = w_base_reg;
+            3:   reg_rdata_mux = x_base_reg;
+            4:   reg_rdata_mux = out_base_reg;
+            5:   reg_rdata_mux = d_reg;
+            6:   reg_rdata_mux = n_reg;
             default: reg_rdata_mux = 32'd0;
         endcase
     end
 
-    // ---- AXI4 slave register block ----
+    // register write mirror (driven by the slave's reg_we/reg_waddr/reg_wdata).
+    // The FSM can also auto-clear CTRL.start when a job finishes so a driver that
+    // leaves start high does not immediately re-trigger.
+    wire        reg_we;
+    wire [AW-1:0] reg_waddr;
+    wire [31:0]   reg_wdata;
+    wire          fsm_clr_start;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn) begin
+            ctrl_reg     <= 32'd0;
+            status_reg   <= 32'd0;
+            w_base_reg   <= 32'd0;
+            x_base_reg   <= 32'd0;
+            out_base_reg <= 32'd0;
+            d_reg        <= 32'd0;
+            n_reg        <= 32'd0;
+        end else if (reg_we) begin
+            case (reg_waddr)
+                0:   ctrl_reg     <= reg_wdata;
+                2:   w_base_reg   <= reg_wdata;
+                3:   x_base_reg   <= reg_wdata;
+                4:   out_base_reg <= reg_wdata;
+                5:   d_reg        <= reg_wdata;
+                6:   n_reg        <= reg_wdata;
+                default: ;
+            endcase
+        end else if (fsm_clr_start) begin
+            ctrl_reg[0] <= 1'b0;
+        end
+    end
+
+    // ================= AXI4 slave (register) =================
     axi4s_reg #(
-        .ADDR_WIDTH (ADDR_WIDTH),
-        .DATA_WIDTH (DATA_WIDTH),
-        .ID_WIDTH   (ID_WIDTH),
-        .NUM_REGS   (NUM_REGS)
-    ) u_axi (
-        .aclk      (aclk),
-        .aresetn   (aresetn),
-
-        .s_axi_awvalid (s_axi_awvalid),
-        .s_axi_awready (s_axi_awready),
-        .s_axi_awaddr  (s_axi_awaddr),
-        .s_axi_awlen   (s_axi_awlen),
-        .s_axi_awsize  (s_axi_awsize),
-        .s_axi_awburst (s_axi_awburst),
-        .s_axi_awid    (s_axi_awid),
-
-        .s_axi_wvalid  (s_axi_wvalid),
-        .s_axi_wready  (s_axi_wready),
-        .s_axi_wdata   (s_axi_wdata),
-        .s_axi_wstrb   (s_axi_wstrb),
-
-        .s_axi_bvalid  (s_axi_bvalid),
-        .s_axi_bready  (s_axi_bready),
-        .s_axi_bresp   (s_axi_bresp),
-        .s_axi_bid     (s_axi_bid),
-
-        .s_axi_arvalid (s_axi_arvalid),
-        .s_axi_arready (s_axi_arready),
-        .s_axi_araddr  (s_axi_araddr),
-        .s_axi_arlen   (s_axi_arlen),
-        .s_axi_arsize  (s_axi_arsize),
-        .s_axi_arburst (s_axi_arburst),
-        .s_axi_arid    (s_axi_arid),
-
-        .s_axi_rvalid  (s_axi_rvalid),
-        .s_axi_rready  (s_axi_rready),
-        .s_axi_rdata   (s_axi_rdata),
-        .s_axi_rresp   (s_axi_rresp),
-        .s_axi_rlast   (s_axi_rlast),
-        .s_axi_rid     (s_axi_rid),
-
-        .reg_we      (reg_we),
-        .reg_waddr   (reg_waddr),
-        .reg_wdata   (reg_wdata),
-        .reg_raddr   (reg_raddr),
-        .reg_rdata_mux (reg_rdata_mux)
+        .ADDR_WIDTH(32), .DATA_WIDTH(32), .ID_WIDTH(4), .NUM_REGS(NUM_REGS)
+    ) u_slave (
+        .aclk(aclk), .aresetn(aresetn),
+        .s_axi_awvalid(s_axi_awvalid), .s_axi_awready(s_axi_awready),
+        .s_axi_awaddr(s_axi_awaddr), .s_axi_awlen(s_axi_awlen),
+        .s_axi_awsize(s_axi_awsize), .s_axi_awburst(s_axi_awburst),
+        .s_axi_awid(s_axi_awid),
+        .s_axi_wvalid(s_axi_wvalid), .s_axi_wready(s_axi_wready),
+        .s_axi_wdata(s_axi_wdata), .s_axi_wstrb(s_axi_wstrb),
+        .s_axi_bvalid(s_axi_bvalid), .s_axi_bready(s_axi_bready),
+        .s_axi_bresp(s_axi_bresp), .s_axi_bid(s_axi_bid),
+        .s_axi_arvalid(s_axi_arvalid), .s_axi_arready(s_axi_arready),
+        .s_axi_araddr(s_axi_araddr), .s_axi_arlen(s_axi_arlen),
+        .s_axi_arsize(s_axi_arsize), .s_axi_arburst(s_axi_arburst),
+        .s_axi_arid(s_axi_arid),
+        .s_axi_rvalid(s_axi_rvalid), .s_axi_rready(s_axi_rready),
+        .s_axi_rdata(s_axi_rdata), .s_axi_rresp(s_axi_rresp),
+        .s_axi_rlast(s_axi_rlast), .s_axi_rid(s_axi_rid),
+        .reg_we(reg_we), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata),
+        .reg_raddr(ridx), .reg_rdata_mux(reg_rdata_mux)
     );
 
-    // ---- matmul core ----
-    // The core's `start` is a level in the current design; we pulse it. The
-    // core's `rst_n` is active-low; we map core_reset to a deassert of rst_n.
-    reg core_rst_n;
-    always @(posedge aclk or negedge aresetn) begin
-        if (!aresetn)      core_rst_n <= 1'b0;
-        else if (core_reset) core_rst_n <= 1'b0;
-        else                core_rst_n <= 1'b1;
-    end
+    // ================= matmul core =================
+    wire [D*32-1:0] xout_vec_i;
+    wire core_done;
 
-    matmul_core #(.D(D), .N(N)) u_core (
-        .clk      (aclk),
-        .rst_n    (core_rst_n),
-        .start    (core_start),
-        .done     (core_done_pulse),
-        .xout_vec (xout_vec)
+    // element-load ports (only meaningful when EXTERNAL_DATA=1)
+    wire        w_load_valid;
+    wire [$clog2(D*N)-1:0] w_load_idx;
+    wire [15:0] w_load_data;
+    wire        x_load_valid;
+    wire [$clog2(N)-1:0]  x_load_idx;
+    wire [15:0] x_load_data;
+
+    // core start: in EXTERNAL_DATA mode the FSM pulses it once after loading;
+    // otherwise it tracks the CTRL.start register bit directly.
+    wire fsm_core_start;
+    wire core_start = EXTERNAL_DATA ? fsm_core_start : start;
+
+    matmul_core #(
+        .D(D), .N(N), .EXTERNAL_LOAD(EXTERNAL_DATA)
+    ) u_core (
+        .clk(aclk), .rst_n(aresetn),
+        .start(core_start),
+        .done(core_done),
+        .xout_vec(xout_vec_i),
+        .w_load_valid(w_load_valid),
+        .w_load_idx(w_load_idx),
+        .w_load_data(w_load_data),
+        .x_load_valid(x_load_valid),
+        .x_load_idx(x_load_idx),
+        .x_load_data(x_load_data)
     );
 
-    // busy = core is running (not done and not idle). The core has no explicit
-    // busy output, so derive it: busy while a run is in progress. We track a
-    // simple "running" flag set by start, cleared by the done pulse.
-    reg running;
+    assign xout_vec = xout_vec_i;
+
+    // ================= xSPI -> aclk CDC (activation vector x) =================
+    // When X_FROM_XSPI=1 the activation vector arrives on the xspi_clk domain and
+    // is bridged into aclk with an async FIFO (gray pointers). This is the
+    // multi-bit data path: a two-flop synchronizer would be wrong here because the
+    // 16-bit element changes every xspi cycle, so sampling it directly could latch
+    // a transient value that never existed in the source domain. The FIFO instead
+    // guarantees each element is written before it is read and never overwritten.
+    wire [15:0] xfifo_rd_data;
+    wire        xfifo_rd_empty;
+    wire        xfifo_wr_full;
+    assign xspi_x_full = xfifo_wr_full;
+
+    async_fifo #(.DATA_WIDTH(16), .DEPTH(XFIFO_DEPTH)) u_xfifo (
+        .wr_clk(xspi_clk), .rst_n(xspi_rst_n),
+        .wr_en(xspi_x_valid), .wr_data(xspi_x_data), .wr_full(xfifo_wr_full),
+        .rd_clk(aclk), .rd_en(xfifo_rd_en), .rd_data(xfifo_rd_data),
+        .rd_empty(xfifo_rd_empty)
+    );
+
+    // consume one x element per aclk cycle while loading from the FIFO
+    wire xfifo_rd_en = X_FROM_XSPI && (lstate == L_LOAD_X) && !xfifo_rd_empty;
+
+    // ---- core x-load ports: mux between AXI (X_FROM_XSPI=0) and FIFO (=1) ----
+    assign x_load_valid = X_FROM_XSPI ?
+        ((lstate == L_LOAD_X) && !xfifo_rd_empty) :
+        ((lstate == L_LOAD_X) && rd_data_valid);
+    assign x_load_idx   = X_FROM_XSPI ? x_elem : (x_elem + x_beat_el);
+    assign x_load_data  = X_FROM_XSPI ? xfifo_rd_data : rd_data[x_beat_el*16 +: 16];
+
+    // ================= AXI master (DDR4) =================
+    wire        rd_start, wr_start;
+    wire [31:0] rd_addr, wr_addr;
+    wire [31:0] rd_len_bytes, wr_len_bytes;
+    wire        wr_data_in_valid;
+    wire [DATA_WIDTH-1:0] wr_data_in;
+    wire        wr_data_in_ready;
+    wire        wr_done;
+    wire        rd_data_valid;
+    wire [DATA_WIDTH-1:0] rd_data;
+    wire        rd_last;
+    wire        rd_data_ready;
+    wire        rd_busy, wr_busy;
+
+    axi4_master #(
+        .ADDR_WIDTH(32), .DATA_WIDTH(DATA_WIDTH)
+    ) u_master (
+        .aclk(aclk), .aresetn(aresetn),
+        // read command
+        .rd_start(rd_start), .rd_addr(rd_addr), .rd_len_bytes(rd_len_bytes),
+        .rd_busy(rd_busy),
+        .rd_data_valid(rd_data_valid), .rd_data(rd_data), .rd_last(rd_last),
+        .rd_data_ready(rd_data_ready),
+        // write command
+        .wr_start(wr_start), .wr_addr(wr_addr), .wr_len_bytes(wr_len_bytes),
+        .wr_busy(wr_busy),
+        .wr_data_in_valid(wr_data_in_valid), .wr_data_in(wr_data_in),
+        .wr_data_in_ready(wr_data_in_ready), .wr_done(wr_done),
+        // AXI master ports
+        .m_axi_awvalid(m_axi_awvalid), .m_axi_awready(m_axi_awready),
+        .m_axi_awaddr(m_axi_awaddr), .m_axi_awlen(m_axi_awlen),
+        .m_axi_awsize(m_axi_awsize), .m_axi_awburst(m_axi_awburst),
+        .m_axi_awid(m_axi_awid),
+        .m_axi_wvalid(m_axi_wvalid), .m_axi_wready(m_axi_wready),
+        .m_axi_wdata(m_axi_wdata), .m_axi_wstrb(m_axi_wstrb),
+        .m_axi_wlast(m_axi_wlast),
+        .m_axi_bvalid(m_axi_bvalid), .m_axi_bready(m_axi_bready),
+        .m_axi_bresp(m_axi_bresp), .m_axi_bid(m_axi_bid),
+        .m_axi_arvalid(m_axi_arvalid), .m_axi_arready(m_axi_arready),
+        .m_axi_araddr(m_axi_araddr), .m_axi_arlen(m_axi_arlen),
+        .m_axi_arsize(m_axi_arsize), .m_axi_arburst(m_axi_arburst),
+        .m_axi_arid(m_axi_arid),
+        .m_axi_rvalid(m_axi_rvalid), .m_axi_rready(m_axi_rready),
+        .m_axi_rdata(m_axi_rdata), .m_axi_rresp(m_axi_rresp),
+        .m_axi_rlast(m_axi_rlast), .m_axi_rid(m_axi_rid)
+    );
+
+    // ================= load/store FSM (EXTERNAL_DATA=1) =================
+    localparam L_IDLE      = 3'd0;
+    localparam L_LOAD_W    = 3'd1;
+    localparam L_LOAD_X    = 3'd2;
+    localparam L_RUN       = 3'd3;
+    localparam L_STORE_OUT = 3'd4;
+
+    // number of BF16 elements per AXI beat (DATA_WIDTH/16) and its counter width
+    localparam BF16_PER_BEAT = DATA_WIDTH/16;
+    localparam BEAT_EL_W     = $clog2(BF16_PER_BEAT);
+
+    reg [2:0]  lstate;
+    reg [$clog2(D*N)-1:0] w_elem;     // W elements loaded so far
+    reg [BEAT_EL_W-1:0]   w_beat_el;  // element within current beat (0..BF16_PER_BEAT-1)
+    reg [$clog2(N)-1:0]   x_elem;     // x elements loaded so far
+    reg [BEAT_EL_W-1:0]   x_beat_el;
+    reg [$clog2(D):0]     out_word;   // FP32 words presented for store (0..D)
+
+    // one-shot command pulses
+    reg rd_start_r, wr_start_r;
+    assign rd_start = rd_start_r;
+    assign wr_start = wr_start_r;
+
+    // ---- master read-data ready: accept a beat only after unpacking all elements ----
+    assign rd_data_ready =
+        (lstate == L_LOAD_W && rd_data_valid && w_beat_el == BF16_PER_BEAT-1) ||
+        (lstate == L_LOAD_X && rd_data_valid && x_beat_el == BF16_PER_BEAT-1);
+
+    // ---- core element-load ports (W: one element per cycle while a beat is held) ----
+    assign w_load_valid = (lstate == L_LOAD_W) && rd_data_valid;
+    assign w_load_idx   = w_elem + w_beat_el;
+    assign w_load_data  = rd_data[w_beat_el*16 +: 16];
+
+    // ---- write-data for storing xout (pack WORDS_PER_BEAT FP32 words/beat) ----
+    assign wr_data_in_valid = (lstate == L_STORE_OUT) && (out_word < D);
+    genvar gw;
+    generate
+        for (gw = 0; gw < WORDS_PER_BEAT; gw = gw + 1) begin : pack_out
+            assign wr_data_in[gw*32 +: 32] = xout_vec_i[(out_word + gw)*32 +: 32];
+        end
+    endgenerate
+
+    // ---- command addresses / lengths ----
+    wire [31:0] w_len_bytes = D*N*2;   // D*N BF16 * 2 bytes
+    wire [31:0] x_len_bytes = N*2;     // N BF16 * 2 bytes
+
+    assign rd_addr      = (lstate == L_LOAD_W) ? w_base_reg : x_base_reg;
+    assign rd_len_bytes = (lstate == L_LOAD_W) ? w_len_bytes : x_len_bytes;
+    assign wr_addr      = out_base_reg;
+    assign wr_len_bytes = D*4;         // D FP32 words * 4 bytes
+
+    // ---- FSM ----
     always @(posedge aclk or negedge aresetn) begin
-        if (!aresetn)      running <= 1'b0;
-        else if (core_start) running <= 1'b1;
-        else if (core_done_pulse)  running <= 1'b0;
+        if (!aresetn) begin
+            lstate     <= L_IDLE;
+            w_elem     <= 0;
+            w_beat_el  <= 0;
+            x_elem     <= 0;
+            x_beat_el  <= 0;
+            out_word   <= 0;
+            rd_start_r <= 1'b0;
+            wr_start_r <= 1'b0;
+            status_reg <= 32'd0;
+        end else begin
+            rd_start_r <= 1'b0;
+            wr_start_r <= 1'b0;
+
+            case (lstate)
+                L_IDLE: begin
+                    status_reg[1] <= 1'b0;   // busy clear
+                    if (EXTERNAL_DATA && start) begin
+                        lstate     <= L_LOAD_W;
+                        w_elem     <= 0;
+                        w_beat_el  <= 0;
+                        x_elem     <= 0;
+                        x_beat_el  <= 0;
+                        out_word   <= 0;
+                        rd_start_r <= 1'b1;   // start reading W
+                        status_reg[1] <= 1'b1; // busy
+                    end
+                end
+
+                L_LOAD_W: begin
+                    if (rd_data_valid) begin
+                        if (w_beat_el == BF16_PER_BEAT-1) begin
+                            w_beat_el <= 0;
+                            w_elem    <= w_elem + BF16_PER_BEAT;
+                            if (w_elem + BF16_PER_BEAT >= D*N) begin
+                                lstate     <= L_LOAD_X;
+                                // x comes from DDR4 only in AXI mode; in X_FROM_XSPI
+                                // mode it arrives on the async FIFO, so no read here.
+                                if (!X_FROM_XSPI)
+                                    rd_start_r <= 1'b1;   // start reading x
+                            end
+                        end else begin
+                            w_beat_el <= w_beat_el + 1;
+                        end
+                    end
+                end
+
+                L_LOAD_X: begin
+                    if (X_FROM_XSPI) begin
+                        // one element per aclk cycle from the async FIFO
+                        if (!xfifo_rd_empty) begin
+                            x_elem <= x_elem + 1'b1;
+                            if (x_elem + 1'b1 >= N)
+                                lstate <= L_RUN;
+                        end
+                    end else begin
+                        if (rd_data_valid) begin
+                            if (x_beat_el == BF16_PER_BEAT-1) begin
+                                x_beat_el <= 0;
+                                x_elem    <= x_elem + BF16_PER_BEAT;
+                                if (x_elem + BF16_PER_BEAT >= N)
+                                    lstate <= L_RUN;
+                            end else begin
+                                x_beat_el <= x_beat_el + 1;
+                            end
+                        end
+                    end
+                end
+
+                L_RUN: begin
+                    if (core_done) begin
+                        lstate     <= L_STORE_OUT;
+                        out_word   <= 0;
+                        wr_start_r <= 1'b1;   // start writing xout
+                    end
+                end
+
+                L_STORE_OUT: begin
+                    // advance the output word pointer as beats are accepted.
+                    if (wr_data_in_valid && wr_data_in_ready)
+                        out_word <= out_word + WORDS_PER_BEAT;
+                    // finish when all D words have been presented and the master
+                    // has completed the write (wr_done pulse).
+                    if (out_word >= D && wr_done) begin
+                        lstate     <= L_IDLE;
+                        status_reg[0] <= 1'b1;   // done
+                        status_reg[1] <= 1'b0;   // busy clear
+                    end
+                end
+
+                default: lstate <= L_IDLE;
+            endcase
+        end
     end
-    assign core_busy  = running;
-    assign core_error = 1'b0;   // no error sources yet
+
+    // one-cycle core-start pulse, asserted on the cycle after loading completes
+    reg core_start_pulse;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn)
+            core_start_pulse <= 1'b0;
+        else
+            core_start_pulse <= (lstate == L_RUN) && !core_done;
+    end
+    assign fsm_core_start = core_start_pulse;
+
+    // one-cycle pulse to auto-clear CTRL.start when a job finishes
+    reg clr_start_pulse;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn)
+            clr_start_pulse <= 1'b0;
+        else
+            clr_start_pulse <= (lstate == L_STORE_OUT) && (out_word >= D) && wr_done;
+    end
+    assign fsm_clr_start = clr_start_pulse;
 
 endmodule

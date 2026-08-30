@@ -1,7 +1,7 @@
 # HANDOFF — matmul_axi
 
 > Read this first if resuming after a context compaction or new session.
-> Last updated: 2026-08-30 (AXI4 slave wrapper complete, all widths pass).
+> Last updated: 2026-08-30 (AXI master + matmul_top integration + CDC done; e2e 288/288 vs C oracle).
 
 ## ⛔ ACCEPTANCE GATE — a block is NOT done until this exits 0
 
@@ -74,20 +74,55 @@ The old goal "bit-exact vs `ref/f32.py` (Python Fraction)" was **wrong** for the
 - [x] `rtl/f32_add.v` — 0 errors vs f32.py (incl. subtraction).
 - [x] **No separate FMA unit** — BF16×BF16 is EXACT in FP32 (8-bit × 8-bit significand = ≤16 bits < 24-bit), so `f32_mul`+`f32_add` chain == true FMA bit-for-bit.
 - [x] **matmul core** (`rtl/matmul_core.v`) — BF16 in, FP32 sequential accumulate over j.
-      **288/288 rows bit-exact vs C oracle at D=288,N=288 (seeds 42 + 12345).**
+      **288/288 rows bit-exact vs C oracle at D=288,N=288 (seeds 42 + 12345).** Now has an
+      `EXTERNAL_LOAD` param (default 0) so the top can feed W/X from AXI instead of `$readmemh`.
 - [x] **AXI4 slave register file** (`rtl/axi4_slave_reg.v`) — full 5-channel AXI4,
       INCR bursts, width-generic (32/64/128/256). **ALL_PASS at all 4 widths.**
-- [x] **ARCHITECTURE.md** — verification standard, bandwidth math, weight placement,
-      AXI width/addr/burst choices + register map, C-oracle plan, open assumptions.
+- [x] **AXI4 master** (`rtl/axi4_master.v`) — burst engine, byte-count API. Bursts capped
+      to one 4 KB page (≤128 beats), `MAX_RD_BURSTS=4` outstanding reads, serialized writes.
+      Protocol assertions under `-DAXI_MASTER_ASSERT`. **5/5 tests pass.**
+- [x] **matmul_top** (`rtl/matmul_top.v`) — register map + AXI master + core integrated.
+      Load FSM reads W (and optionally X) from DDR4 into the core, computes, writes xout back.
+      `EXTERNAL_DATA` param keeps the `$readmemh` path; `X_FROM_XSPI`+async FIFO for CDC.
+      **e2e 288/288 bit-exact vs C oracle (D=288,N=288).**
+- [x] **CDC** (`rtl/async_fifo.v`) — gray-pointer async FIFO. x activation crosses from the
+      xSPI clock domain to aclk through it. **e2e-CDC 288/288 bit-exact vs C oracle.**
+- [x] **ARCHITECTURE.md** — §6 (AXI master decisions: burst/4KB/outstanding/assertions) +
+      §7 (CDC: why two-flop sync is wrong for multi-bit data, gray-pointer FIFO fix).
 - [x] **C oracle** (`ref/c_matmul_oracle.c`) — replicates `matmul()` verbatim.
 - [x] **llama2.c source** fetched to `ext/` (run.c, model.py, Makefile).
+
+## ⚠ ACCEPTANCE GATE STATUS (the real "done" bar)
+HANDOFF's gate is `simcheck.json` + `simcheck.py`. A block is NOT done until its gate exits 0.
+The TBs must print machine-readable markers (`CHECK name n_checked n_bad`, `COVER name hits`,
+`ASSERT name [viol]`, `SIMEND ok|fail`) — **prose like "ALL_PASS" does NOT count.**
+Also: the gate treats any log line matching `TIMEOUT|WATCHDOG|Fatal` as fatal, and (for config
+blocks) treats truncated-constant / implicit-declaration / inferred-latch compile warnings as fatal.
+
+Gate state this round:
+- [x] f32_units, matmul_core, axi4_slave_reg — already "done" (verified by user last round).
+- [ ] axi4_master, matmul_top, cdc — RTL + TBs pass functionally, but the TBs do NOT yet emit
+      gate markers and do not yet exercise every `require_cover` scenario. **This is the remaining
+      work to honestly close the round.** The config's `tb`/`src` paths also still point at planned
+      names (e.g. `tb/tb_cdc.v`, `rtl/cdc_fifo.v`) that differ from what was actually built
+      (`tb/tb_async_fifo.v`+`tb_matmul_top_cdc.v`, `rtl/async_fifo.v`) — update the config to the
+      real files WITHOUT weakening any `require_cover`.
+
+### require_cover each block must actually exercise (do NOT remove these)
+- axi4_master: single_burst, back_to_back, boundary_cross, backpressure, outstanding_max, error_response
+- matmul_top:  end_to_end_match, weights_from_ddr, result_written_back, status_polling
+- cdc:         slow_to_fast, fast_to_slow, fifo_full, fifo_empty, reset_during_traffic
 
 ## Verification results (measured)
 - `ref/validate_band.py` (d=n=288): build A (sequential separate mul+add) vs Python model =
   **100% bit-exact**; A vs B (FMA-contracted) = **100% bit-exact** (confirms BF16×BF16 exact
   in FP32); A vs C (AVX-vectorized) = max rel err 7e-4, 100% within 1e-3, only ~16.5% bit-exact.
-- `tb_matmul_core.v`: 288/288 bit-exact vs C oracle (D=288,N=288, 2 seeds).
+- `tb_matmul_core.v`: 288/288 bit-exact vs C oracle (D=288,N=288, 2 seeds); also 8/8 at D=8,N=16.
 - `tb_axi4_slave_reg.v`: ALL_PASS at AXI_DATA_WIDTH = 32, 64, 128, 256.
+- `tb_axi4_master.v`: 5/5 tests pass (read/write/4KB-cross/backpressure/large) with `-DAXI_MASTER_ASSERT`.
+- `tb_matmul_top_e2e.v`: **288/288 outputs bit-exact vs C oracle** (X from DDR4, D=288,N=288).
+- `tb_matmul_top_cdc.v`: **288/288 outputs bit-exact vs C oracle** (X via async FIFO on a 2nd clock).
+- `tb_async_fifo.v`: 2000 words across unrelated clocks, 0 errors.
 
 ## Key design decisions
 1. **Target semantics = sequential** accumulation (the loop's mathematical intent; deterministic; natural HW datapath). The `-Ofast` build is kept only to quantify drift (within the 1e-3 band).
