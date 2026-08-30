@@ -195,16 +195,21 @@ def install_autostart():
         log("找不到 Startup 資料夾：%s" % startup)
         return 1
     bat = os.path.join(startup, "27B-watchdog.bat")
+    # 用 pythonw.exe 跑，不開視窗 —— 看門狗沒有需要盯著看的輸出，
+    # 狀態都在 27B-STATUS.txt 和 watchdog.log 裡，開個窗只是佔螢幕。
     py = sys.executable
+    pyw = os.path.join(os.path.dirname(py), "pythonw.exe")
+    if not os.path.exists(pyw):
+        pyw = py
     body = (
         "@echo off\r\n"
         "REM Auto-started at logon: keeps llama-server and the bridge alive.\r\n"
+        "REM Runs windowless via pythonw; state goes to 27B-STATUS.txt on the\r\n"
+        "REM desktop and watchdog.log next to this script.\r\n"
         "REM ASCII only on purpose: cmd reads .bat in the OEM codepage.\r\n"
-        "chcp 65001 >nul\r\n"
-        "title 27B watchdog\r\n"
         "cd /d \"%s\"\r\n"
-        "\"%s\" \"%s\\_watchdog.py\"\r\n"
-        % (HERE, py, HERE))
+        "start \"\" /b \"%s\" \"%s\\_watchdog.py\"\r\n"
+        % (HERE, pyw, HERE))
     try:
         with open(bat, "w", encoding="ascii", newline="") as f:
             f.write(body)
