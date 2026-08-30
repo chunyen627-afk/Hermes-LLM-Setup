@@ -34,6 +34,7 @@ MIN_PROGRESS_CALLS = 5   # 一輪至少要有幾次工具呼叫才算「有在�
 COOLDOWN_SEC = 60        # 兩次接續之間至少間隔多久（防抖動迴圈）
 GATE_TIMEOUT = 900       # 跑驗收關卡最多等幾秒
 ZOMBIE_IDLE_MIN = 5      # session 標記為「跑著」但這麼久沒動靜 = 行程已死
+SHORT_RUN_MIN = 3        # 活不到這麼久就沒產出 = 被中斷，不是空轉
 
 # 驗收關卡：專案根有 simcheck.json 時，它宣告完成必須通過才採信
 SIMCHECK = os.path.join(
@@ -166,6 +167,33 @@ def _upstream_busy():
         return any(x.get("is_processing") for x in slots)
     except Exception:
         return False
+
+
+def _prev_report(skip_sid):
+    """往前找一個有像樣收尾報告的 session。
+
+    被中斷的那輪只有一兩則訊息，接續時沒有脈絡可用；
+    但再往前那輪的交代還在，用它一樣接得上。
+    """
+    try:
+        c = sqlite3.connect(DB)
+        rows = c.execute(
+            "SELECT id FROM sessions "
+            "WHERE source IN ('cli','desktop','tui') AND id != ? "
+            "ORDER BY started_at DESC LIMIT 5", (skip_sid,)).fetchall()
+        for (sid,) in rows:
+            r = c.execute(
+                "SELECT coalesce(content,'') FROM messages "
+                "WHERE session_id=? AND role='assistant' "
+                "ORDER BY rowid DESC LIMIT 8", (sid,)).fetchall()
+            for (t,) in r:
+                if t and len(t.strip()) >= 80:
+                    c.close()
+                    return t.strip()
+        c.close()
+    except Exception:
+        pass
+    return ""
 
 
 def _spec_only_check(cfg, project):
@@ -313,9 +341,18 @@ def decide():
 
     # 5. 上一輪有沒有真的在做事
     nfiles = files_touched(sid)
+    # 「沒進展」要看它有沒有機會做事。跑了一陣子卻什麼都沒產出 = 空轉，
+    # 該停；但剛啟動就被中斷（當機、關視窗、被 kill）也是 0 次呼叫，
+    # 那是意外不是空轉 —— 重試才對，否則一次意外就讓自動化永久停擺。
+    lifetime_min = ((ended or _last_activity(sid) or now) - started) / 60
+    if (calls is not None and calls < MIN_PROGRESS_CALLS and nfiles == 0
+            and lifetime_min >= SHORT_RUN_MIN):
+        return False, ("上一輪跑了 %.0f 分鐘卻只有 %s 次工具呼叫、"
+                       "沒寫任何檔案 —— 看起來在空轉，不要繼續"
+                       % (lifetime_min, calls)), s
     if calls is not None and calls < MIN_PROGRESS_CALLS and nfiles == 0:
-        return False, ("上一輪只有 %s 次工具呼叫、沒寫任何檔案 —— "
-                       "看起來沒進展，不要空轉" % calls), s
+        log("[guard] 上一輪只活了 %.1f 分鐘、%s 次呼叫 —— "
+            "當成被中斷（不是空轉），重試" % (lifetime_min, calls))
 
     # 6. 它說做完了 —— 但不採信，先跑驗收關卡
     last = last_assistant(sid)
@@ -340,9 +377,15 @@ def decide():
     if HELP_RE.search(last):
         return False, "它說卡住了/需要人決定 —— 自動接續解不了，停下來", s
 
-    # 8. 沒有收尾報告就接不下去
+    # 8. 沒有收尾報告就接不下去 —— 但被中斷的那輪本來就沒機會寫。
+    #    這種情況往前找上一個有交代的 session，脈絡照樣接得上。
     if len(last.strip()) < 80:
-        return False, "上一輪沒留下像樣的收尾報告，接續會失去脈絡", s
+        prev = _prev_report(sid)
+        if prev:
+            log("[guard] 這輪被中斷沒留報告，改用前一輪的交代（%d 字）"
+                % len(prev))
+        else:
+            return False, "上一輪沒留下像樣的收尾報告，接續會失去脈絡", s
 
     # 9. 沒宣告完成時也看一眼關卡，把狀態寫進 log 當脈絡
     gate_note = ""
