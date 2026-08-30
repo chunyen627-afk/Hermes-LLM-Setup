@@ -8,7 +8,6 @@
     "4_timing": "時序/資源: 合成 + STA; 本機無 Vivado -> 一律標 [ASSUMPTION]",
     "_rule": "不要跳階段。第 2 階沒過就進第 3 階, 症狀會是『整合後偶爾錯幾筆』, 那是最難查的一類 bug。"
   },
-
   "_comment": [
     "驗收設定檔 — 每個 block 做完都要跑到綠，才算完成。",
     "跑法: python <skills>/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block <name>",
@@ -18,50 +17,58 @@
     "改這個檔的規則: 只能「加」驗收項目, 不能為了讓測試過而「拿掉」require_cover。",
     "真的要拿掉某項, 理由必須寫進 HANDOFF.md 的『已確認行不通的做法』並註明日期。"
   ],
-
   "script": "C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py",
-
   "blocks": {
     "f32_units": {
       "status": "done",
       "stage": "1_function",
       "note": "bit-exact vs numpy float32 ref (same f32_ref.py as check_f32.py); wrapper compiles+runs TB and emits markers. Sub path (a-b) now checked too.",
-      "cmd": ["python", "ref/gate_f32_units.py"],
+      "cmd": [
+        "python",
+        "ref/gate_f32_units.py"
+      ],
       "cwd": ".",
       "require_cover": []
     },
-
     "matmul_core": {
       "status": "done",
       "stage": "1_function",
       "note": "40/40 bit-exact vs c_matmul_oracle.c, 已複驗",
       "_gotcha": "TB 用 $readmemh(\"expected.hex\") 相對路徑, 必須在 out/mmtest/ 跑, 不然全部 mismatch (看起來像 RTL 壞掉, 其實是 cwd 錯)",
       "tb": "tb/tb_matmul_core.v",
-      "src": ["rtl/matmul_core.v", "rtl/f32_mul.v", "rtl/f32_add.v"],
+      "src": [
+        "rtl/matmul_core.v",
+        "rtl/f32_mul.v",
+        "rtl/f32_add.v"
+      ],
       "top": "tb_matmul_core",
       "run_in": "out/mmtest",
       "require_cover": []
     },
-
     "axi4_slave_reg": {
       "status": "done",
       "stage": "2_interface",
       "note": "32/64/128/256 四種位寬全過, 已複驗",
       "tb": "tb/tb_axi4_slave_reg.v",
-      "src": ["rtl/axi4_slave_reg.v"],
+      "src": [
+        "rtl/axi4_slave_reg.v"
+      ],
       "top": "tb_axi4_slave_reg",
       "sweep": "AXI_DATA_WIDTH=32,64,128,256",
       "require_cover": []
     },
-
     "axi4_master": {
       "status": "in_progress",
       "stage": "2_interface",
       "note": "burst engine: 4KB-split, MAX_RD_BURSTS outstanding reads, serialized writes. TB emits gate markers + exercises all 6 covers.",
       "tb": "tb/tb_axi4_master.v",
-      "src": ["rtl/axi4_master.v"],
+      "src": [
+        "rtl/axi4_master.v"
+      ],
       "top": "tb_axi4_master",
-      "define": ["AXI_MASTER_ASSERT"],
+      "define": [
+        "AXI_MASTER_ASSERT"
+      ],
       "require_cover": [
         "single_burst",
         "back_to_back",
@@ -71,7 +78,6 @@
         "error_response"
       ]
     },
-
     "matmul_top": {
       "status": "in_progress",
       "stage": "3_integration",
@@ -99,15 +105,102 @@
         "mem_backpressure",
         "mem_refresh_stall",
         "mem_read_write_turnaround"
-      ]
+      ],
+      "spec": {
+        "CTRL.start": {
+          "pattern": "ctrl_reg\\[0\\]|ctrl_reg\\s*\\[\\s*0\\s*\\]|start_bit",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x00 bit0"
+        },
+        "CTRL.reset": {
+          "pattern": "ctrl_reg\\[1\\]|soft_reset",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x00 bit1 - 目前沒實作"
+        },
+        "CTRL.bf16_in": {
+          "pattern": "ctrl_reg\\[2\\]|bf16_in",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x00 bit2 - 目前沒實作"
+        },
+        "STATUS.busy": {
+          "pattern": "status_reg\\[0\\]|busy",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x04 bit0"
+        },
+        "STATUS.done": {
+          "pattern": "status_reg\\[1\\]|done_latch|status_done",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x04 bit1"
+        },
+        "STATUS.error": {
+          "pattern": "status_reg\\[2\\]|err_latch|status_err",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x04 bit2 - 目前沒實作"
+        },
+        "M_DIM": {
+          "pattern": "M_DIM|m_dim|d_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x08"
+        },
+        "N_DIM": {
+          "pattern": "N_DIM|n_dim|n_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x0C"
+        },
+        "W_BASE": {
+          "pattern": "w_base_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "0x10"
+        },
+        "X_BASE": {
+          "pattern": "x_base_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "0x14"
+        },
+        "OUT_BASE": {
+          "pattern": "out_base_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "0x18"
+        },
+        "COUNT": {
+          "pattern": "COUNT|count_reg|out_count",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x1C 已產生幾筆輸出 - 目前沒實作"
+        }
+      }
     },
-
     "cdc": {
       "status": "done",
       "stage": "2_interface",
       "note": "async FIFO: gray pointer + 兩級同步, 資料走 dual-port RAM。2000 words 0 errors, 變異測試驗證過",
       "tb": "tb/tb_async_fifo.v",
-      "src": ["rtl/async_fifo.v"],
+      "src": [
+        "rtl/async_fifo.v"
+      ],
       "top": "tb_async_fifo",
       "require_cover": [
         "slow_to_fast",
@@ -117,7 +210,6 @@
         "reset_during_traffic"
       ]
     },
-
     "xspi_slave": {
       "status": "pending",
       "stage": "0_define",
@@ -126,7 +218,10 @@
       "_scope": "位元流解析(命令/位址/資料分段) + 跨時脈域(xspi_clk -> aclk, 用現成的 async_fifo) + 當 AXI master 寫 DDR4。matmul_top 已經預留 xspi_clk 與 X_FROM_XSPI 參數",
       "_note_vivado": "Vivado 的 AXI Quad SPI 不適用 —— 那是 FPGA 當 SPI master 用的, 且 AXI-Lite 介面不能當資料通道。自己寫比較實在, 核心邏輯比 axi4_master 簡單",
       "tb": "tb/tb_xspi_slave.v",
-      "src": ["rtl/xspi_slave.v", "rtl/async_fifo.v"],
+      "src": [
+        "rtl/xspi_slave.v",
+        "rtl/async_fifo.v"
+      ],
       "top": "tb_xspi_slave",
       "require_cover": [
         "single_transfer",
@@ -137,7 +232,6 @@
         "clock_ratio_extremes"
       ]
     },
-
     "matmul_top_cdc": {
       "status": "in_progress",
       "stage": "3_integration",
@@ -163,7 +257,6 @@
       ]
     }
   },
-
   "_cover_meanings": {
     "single_burst": "單一 burst 讀寫, 資料 bit-exact",
     "back_to_back": "前一筆 B 還沒回就發下一個 AW — 沒數到代表管線化從沒被測過",
@@ -189,5 +282,6 @@
     "fifo_full": "FIFO 滿並產生反壓的次數",
     "fifo_empty": "FIFO 空並讓下游等待的次數",
     "reset_during_traffic": "傳輸進行中被 reset 且正確復原的次數"
-  }
+  },
+  "_spec_doc": "spec 區塊：架構文件承諾的每一項，都要能在原始碼裡找到。 gate 擋得住『測試沒跑』『路徑沒走過』，但擋不住『規格書上有、程式碼裡沒有』 —— 沒實作的暫存器不會有測試失敗，因為根本沒人替它寫測試。 規則同 require_cover：只能加不能減；真的不做就改文件，不要讓兩邊不一致。"
 }
