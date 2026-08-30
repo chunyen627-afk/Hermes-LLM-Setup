@@ -1,8 +1,8 @@
 ---
 name: verification-discipline
-description: "怎麼證明「它真的好了」：驗證標準怎麼訂、什麼時候可以說完成、常見的自我欺騙。任何專案都適用。"
+description: "怎麼證明「它真的好了」：驗證標準怎麼訂、什麼時候可以說完成、常見的自我欺騙。重點：自我檢查是最弱的防線，「完成」要用機器判定的關卡（simcheck.json + CHECK/COVER 標記）加上變異測試來證明，不是靠自己讀 log 判斷。任何專案都適用。"
 tags: [verification, testing, debugging, quality, workflow, discipline]
-related_skills: [firmware-workflow, embedded-ui-verification, systematic-debugging]
+related_skills: [rtl-sim-verification, firmware-workflow, embedded-ui-verification, systematic-debugging]
 ---
 
 # 驗證的紀律
@@ -84,6 +84,67 @@ related_skills: [firmware-workflow, embedded-ui-verification, systematic-debuggi
 - 我驗證的是**真的東西**，還是我自己的假設？
 - 如果現在有人說「這裡壞了」，我拿得出反駁的證據嗎？
 - 我有沒有把「沒看到錯誤」當成「沒有錯誤」？
+
+---
+
+### ⛔ 但自我檢查是最弱的一道防線
+
+上面那幾個問題有個共同弱點：**問的人跟被問的人是同一個。**
+長時間工作、context 被壓縮之後，答案幾乎永遠是「看過了，很好」。
+
+**所以「完成」的定義要放在你腦子外面。**
+
+專案根目錄放一份 `simcheck.json`，列出每個 block 要通過什麼；
+宣告完成之前跟它要答案，**exit 0 才算完成**：
+
+```bash
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py     --config simcheck.json --all
+```
+
+測試只要多印四種標記（其他輸出照舊，關卡會忽略人話）：
+
+```
+CHECK  <name> <n_checked> <n_bad>   比對了幾筆、錯幾筆；0 筆 = 失敗
+COVER  <name> <n_hits>              這個情境真的發生過幾次；0 次 = 失敗
+ASSERT <name> <n_violations>        非 0 = 失敗
+SIMEND <ok|fail>                    沒印 = 掛了或提早結束
+```
+
+**關卡 fail closed —— 沒有證據就是失敗。**
+它擋得住三種自我檢查抓不到的情況：
+
+| 情況 | 自我檢查會怎麼答 | 關卡怎麼判 |
+|---|---|---|
+| 測試一筆都沒跑（向量檔是空的） | 「沒看到錯誤」→ 通過 | `CHECK 0` → **失敗** |
+| 資料全對，但某條路徑從沒走過 | 「都對啊」→ 通過 | `COVER 0` → **失敗** |
+| 改壞了但自己沒發現 | 「應該還好」 | 跟上次的數字一比就知道 |
+
+**第二項最重要。** 「所有比對都對」不等於「每條路徑都測過」——
+`ready` 綁死 1 的測試永遠測不到反壓，資料卻可以全對。
+
+⚠ 這支腳本**跟語言無關**，不只給 RTL 用：
+```bash
+python .../simcheck.py --cmd "pytest -q tests/" --require-cover retry_path
+python .../simcheck.py --cmd "cargo test"      --require-cover slow_path
+```
+
+怎麼從介面契約推出 `require_cover` 清單、以及分階段的驗收標準，
+見 [[rtl-sim-verification]] 的 `references/staged-acceptance.md`
+（方法本身跟硬體無關，軟體專案照樣適用）。
+
+### 再加一道：變異測試
+
+關卡能確認「測試跑了、路徑走過」，但確認不了「測試抓得到 bug」。
+
+**在被測物裡蓄意注入一個 bug，重跑，看測試會不會掛。**
+
+```bash
+sed "s/out = data;/out = data ^ 1;/" src/foo.c > /tmp/mut.c
+# 重編、重跑 —— n_bad 要變大，沒變大就代表測試是空轉的
+```
+
+⚠ **先確認注入成功**（`grep` 一下改到了沒）。
+沒改到的話你跑的是原始碼，會得到一個假的結果 —— 這個坑我踩過。
 
 ---
 
