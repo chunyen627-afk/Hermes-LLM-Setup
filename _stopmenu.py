@@ -54,22 +54,35 @@ def _latest_sid():
 
 
 def _last_report(sid=None):
-    """撈它最後一則有內容的訊息 —— 那就是收尾報告。"""
-    sid = sid or _latest_sid()
-    if not sid:
-        return ""
+    """撈最近一份像樣的收尾報告。
+
+    先看指定（或最新）的 session；那一輪如果是被中斷的（當機、關視窗、
+    被 kill），只有一兩則訊息、沒有交代，就往前找 —— 再前面那輪的
+    報告一樣接得上，總比「讀不到報告，停在這裡」好。
+    """
     try:
         c = sqlite3.connect(DB)
-        rows = c.execute(
-            "SELECT coalesce(content,'') FROM messages "
-            "WHERE session_id=? AND role='assistant' "
-            "ORDER BY rowid DESC LIMIT 12", (sid,)).fetchall()
+        sids = []
+        if sid:
+            sids.append(sid)
+        for (x,) in c.execute(
+                "SELECT id FROM sessions "
+                "WHERE source IN ('cli','desktop','tui') "
+                "ORDER BY started_at DESC LIMIT 6").fetchall():
+            if x not in sids:
+                sids.append(x)
+        for s_id in sids:
+            rows = c.execute(
+                "SELECT coalesce(content,'') FROM messages "
+                "WHERE session_id=? AND role='assistant' "
+                "ORDER BY rowid DESC LIMIT 12", (s_id,)).fetchall()
+            for (t,) in rows:
+                if t and len(t.strip()) > 80:
+                    c.close()
+                    return t.strip()
         c.close()
     except Exception:
-        return ""
-    for (t,) in rows:
-        if t and len(t.strip()) > 80:
-            return t.strip()
+        pass
     return ""
 
 
