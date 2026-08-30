@@ -1,7 +1,7 @@
 ---
 name: rtl-sim-verification
-description: "Build + verify RTL circuits via Icarus simulation. Defines the staged acceptance standard for hardware work -- what to verify at each stage (define standard / function / interface contract / integration / timing) and the machine-decidable exit condition for each. Covers bus and handshake protocol verification (AXI, Avalon, Wishbone, valid-ready), how to tell whether a failing test means the DUT or the testbench is wrong, and why you must never bend the design to fit a broken test model."
-tags: [rtl, verilog, simulation, iverilog, verification, digital-design, waveform, axi, bus, protocol, handshake, valid-ready, backpressure, testbench, memory-model, acceptance-criteria, staged-verification, coverage, done-definition]
+description: "Build + verify RTL circuits via Icarus simulation. Leads with the rule that a test must be able to disprove the design -- fixed latencies, tied-high ready signals and opponent models that only need to respond produce all-green reports for unverified designs. Defines the staged acceptance standard for hardware work -- what to verify at each stage (define standard / function / interface contract / integration / timing) and the machine-decidable exit condition for each. Covers bus and handshake protocol verification (AXI, Avalon, Wishbone, valid-ready), how to tell whether a failing test means the DUT or the testbench is wrong, and why you must never bend the design to fit a broken test model."
+tags: [rtl, verilog, simulation, iverilog, verification, digital-design, waveform, test-severity, adversarial-testing, axi, bus, protocol, handshake, valid-ready, backpressure, testbench, memory-model, acceptance-criteria, staged-verification, coverage, done-definition]
 related_skills: [hardware-design-tradeoffs, verification-discipline, firmware-workflow, systematic-debugging]
 ---
 
@@ -11,6 +11,68 @@ related_skills: [hardware-design-tradeoffs, verification-discipline, firmware-wo
 然後**證明它對**——不是「看起來對」。 Core discipline comes from
 [[verification-discipline]]: multiple independent indicators cross-check each
 other + verify your measurement tool first.
+
+---
+
+## 總則：測試要為難自己，不要討好自己
+
+**寫測試的人跟被測的人是同一個 —— 這是最大的利益衝突。**
+
+人（和模型）會不自覺地把測試寫成「剛好會過」的樣子：
+延遲用固定值、`ready` 綁死 1、輸入挑好算的、邊界避開不測。
+不是故意的，是因為**測試過了感覺比較好**。
+
+結果就是一份全綠的報告，配上一個沒被驗證過的設計。
+
+### 判準：這個測試能不能推翻我的設計？
+
+每寫一個測試，問自己：
+**「如果設計是錯的，這個測試會不會掛？」**
+
+答案是「不一定」的時候，那個測試沒有價值 —— 它只是在確認
+「在我假設的理想條件下，我的設計符合我的假設」。
+
+具體的自我檢查：
+
+| 你寫了什麼 | 該問什麼 |
+|---|---|
+| 固定延遲 | 真實器件的延遲會變嗎？變三倍會怎樣？ |
+| `ready` 恆為 1 | 反壓那條路徑走過嗎？ |
+| 對手模型「能回應就好」 | 真東西還會做什麼我沒模擬的？ |
+| 挑好算的測試向量 | 邊界值、極值、0、最大值測了嗎？ |
+| 只測正常流程 | 錯誤回應、中途 reset、佇列滿呢？ |
+| 剛好跑完就結束 | 連續跑很久會不會有計數器溢位？ |
+
+### 三條硬規則
+
+1. **測試環境只能變嚴，不能為了讓它過而變寬鬆。**
+   加了隨機化之後測試掛掉，那是**發現了 bug**，不是模型寫壞。
+   要放寬任何一項，理由必須是「真實系統也不會出現這個情況」，
+   而且要有依據（datasheet、規格書），不能用猜的 ——
+   沒依據就標 `[ASSUMPTION]` 寫進架構文件。
+
+2. **全綠不是終點，是「還沒被推翻」。**
+   報告要寫「在什麼條件下通過」，不是「通過了」。
+   「在固定延遲、無反壓的記憶體模型下 288/288 一致」
+   跟「288/288 一致」是兩句不同的話，後者會誤導接手的人。
+
+3. **測試過了就去想「我還沒測到什麼」。**
+   這比再跑一次通過的測試有價值得多。
+
+### 反例（2026-08-30 實際發生）
+
+一個 AXI master 接「DDR4」，e2e 288/288 與 C oracle 一致、
+協定 assertion 零觸發、看起來可以接真板子了。
+
+但那個「DDR4」是：固定 5 拍延遲、平坦陣列、`arready` 幾乎恆為 1。
+**真實 DDR4 的 row miss 延遲是 row hit 的三倍、每 7.8µs 強制 refresh、
+命令佇列滿會反壓** —— 一個都沒模擬。
+
+所以那份全綠證明的是
+「**在一個永遠很快、延遲固定、不會反壓的記憶體下，資料路徑算得對**」。
+有價值，但**不足以支撐「可以接真硬體」這個結論**。
+
+設計本身可能是好的 —— 但沒被為難過，就還沒被證明。
 
 ---
 
