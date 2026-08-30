@@ -11,7 +11,7 @@
 
   "_comment": [
     "驗收設定檔 — 每個 block 做完都要跑到綠，才算完成。",
-    "跑法: python <skills>/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block <name>",
+    "跑法: python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block <name>",
     "或直接跑全部: ... --config simcheck.json --all",
     "exit 0 = PASS, 1 = FAIL。最後一行 SIMCHECK_RESULT {json} 是機器可讀的結果。",
     "",

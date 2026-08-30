@@ -300,9 +300,9 @@ $display("SIMEND %s", (errors==0) ? "ok" : "fail");          // 沒印 = FAIL
 ```
 
 ```bash
-python simcheck.py --tb tb/tb_foo.v --src rtl/foo.v --top tb_foo     --require-cover back_to_back,boundary_cross,backpressure
-python simcheck.py --tb ... --top tb_foo --sweep DATA_WIDTH=32,64,128,256
-python simcheck.py --cmd "pytest -q tests/" --require-cover slow_path
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --tb tb/tb_foo.v --src rtl/foo.v --top tb_foo     --require-cover back_to_back,boundary_cross,backpressure
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --tb ... --top tb_foo --sweep DATA_WIDTH=32,64,128,256
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --cmd "pytest -q tests/" --require-cover slow_path
 ```
 
 exit 0 = PASS，1 = FAIL，最後一行是 `SIMCHECK_RESULT {json}`。
@@ -338,9 +338,9 @@ exit 0 = PASS，1 = FAIL，最後一行是 `SIMCHECK_RESULT {json}`。
 ```
 
 ```bash
-python simcheck.py --config simcheck.json --list             # 有哪些 block、各要什麼
-python simcheck.py --config simcheck.json --block axi4_master
-python simcheck.py --config simcheck.json --all              # 跑全部非 pending
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --list             # 有哪些 block、各要什麼
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block axi4_master
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --all              # 跑全部非 pending
 ```
 
 - 路徑相對於設定檔所在目錄

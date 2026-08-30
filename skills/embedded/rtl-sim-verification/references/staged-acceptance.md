@@ -49,7 +49,7 @@
 
 **第一步：複製範本。**
 ```bash
-cp <skills>/embedded/rtl-sim-verification/references/simcheck.example.json    ./simcheck.json
+cp C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/simcheck.example.json    ./simcheck.json
 ```
 把裡面的 block 換成這個專案的，`status` 全部設 `pending`。
 
@@ -242,7 +242,7 @@ COVER <每條真實路徑都走過> <n>   n > 0
 
 **1. 跑 gate，不要自己讀 log 判斷。**
 ```bash
-python <skills>/.../simcheck.py --config simcheck.json --all
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --all
 ```
 exit 0 才算完成。**exit 1 就是還沒好**，不管 log 看起來多漂亮。
 

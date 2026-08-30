@@ -342,7 +342,7 @@ $display("SIMEND %s", (n_bad==0 && n_viol==0) ? "ok" : "fail");
 ```
 
 ```bash
-python simcheck.py --tb tb/tb_master.v --src rtl/master.v --top tb_master     --require-cover back_to_back,boundary_cross,backpressure,error_response,outstanding_max
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --tb tb/tb_master.v --src rtl/master.v --top tb_master     --require-cover back_to_back,boundary_cross,backpressure,error_response,outstanding_max
 ```
 
 任何一個 `COVER` 是 0 就 FAIL，即使所有資料比對都零錯誤。
