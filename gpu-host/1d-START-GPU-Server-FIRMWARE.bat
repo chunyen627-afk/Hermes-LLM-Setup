@@ -19,7 +19,7 @@ echo   on a single turn. A long task never finishes that way.
 echo   Firmware work needs low temp, not deep thinking.
 echo.
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_ensure_38.ps1" -Think low -Mode fw -Ctx 204800 -Slots 1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_ensure_38.ps1" -Think low -Mode fw -Ctx 245760 -Slots 2
 if errorlevel 1 ( echo. & echo [ERROR] failed to start & pause & exit /b 1 )
 
 echo.

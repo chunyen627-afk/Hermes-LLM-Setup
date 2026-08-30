@@ -20,7 +20,7 @@ curl -s -m 5 http://127.0.0.1:8001/v1/models >nul 2>&1
 if not errorlevel 1 goto server_ok
 
 if not exist "%ENSURE%" goto no_server
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ENSURE%" -Think low -Mode fw -Ctx 204800 -Slots 1 >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ENSURE%" -Think low -Mode fw -Ctx 245760 -Slots 2 >nul 2>&1
 
 set /a tries=0
 :wait_server

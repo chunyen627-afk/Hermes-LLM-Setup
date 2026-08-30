@@ -1,11 +1,11 @@
 @echo off
+REM Resume the last task that was cut off by the tool-call limit.
+REM Picks up the handoff report it wrote itself and reruns with --max-turns 500.
+REM If the last task ended normally, it will say there is nothing to resume.
+REM ASCII comments on purpose: cmd reads .bat in the OEM codepage.
 chcp 65001 >nul
-title 接續上一個任務
+title Resume last task
 cd /d "%~dp0"
-
-REM 接續最近一個「撞工具上限被中斷」的任務。
-REM 會自動抓它自己寫的交接報告當新的 prompt，用 --max-turns 500 重跑。
-REM 如果上一個任務是正常結束（不是撞上限），會直接告訴你沒東西可接。
 
 set PY=C:\Users\pjunm\AppData\Local\Programs\Python\Python311\python.exe
 if not exist "%PY%" set PY=python

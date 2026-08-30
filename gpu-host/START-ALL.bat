@@ -1,18 +1,21 @@
 @echo off
+REM ============================================================
+REM  Start everything in one go:
+REM    1. llama-server :8001  (model, 2 slots x 120K ctx + mmproj vision)
+REM    2. bridge       :1234  (Hermes and the family GUI both go through it)
+REM    3. family GUI   :5000  (phone/family, vision runs on the local 27B)
+REM  Each step probes first and skips if already running.
+REM
+REM  The boot task Qwen38-GPU-Server runs this same file, so boot and
+REM  manual launch take the same path.
+REM
+REM  ASCII only, on purpose: cmd reads .bat in the OEM codepage, so UTF-8
+REM  Chinese comments turn into garbage and get executed as commands.
+REM  Chinese filenames break Set-ScheduledTask the same way.
+REM ============================================================
 chcp 65001 >nul
 title Qwen3.8-27B - start all
 cd /d "%~dp0"
-
-REM ============================================================
-REM  一次把整套帶起來：
-REM    1. llama-server :8001  模型本體（2 slot 各 120K + mmproj 視覺）
-REM    2. 橋接器      :1234  Hermes 和家人 GUI 都走這個
-REM    3. 家人 GUI    :5000  手機/家人用，看圖走本機 27B
-REM  每一項都先偵測，已經在跑就跳過，不會重複啟動。
-REM
-REM  開機排程 Qwen38-GPU-Server 也是跑這支，所以開機和手動同一條路。
-REM  檔名和路徑都用 ASCII —— 中文檔名在排程/PowerShell 之間會編碼壞掉。
-REM ============================================================
 
 echo [1/3] llama-server ...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_bootmenu.ps1"
@@ -27,7 +30,7 @@ powershell -NoProfile -Command "$g='C:\Users\pjunm\OneDrive\Desktop\hermes\remot
 
 echo.
 echo ============================================================
-echo   done. 這三個視窗可以縮到最小，但不要關掉。
+echo   Done. Keep these windows open (minimizing is fine).
 echo     model   http://127.0.0.1:8001
 echo     bridge  http://127.0.0.1:1234
 echo     family  http://127.0.0.1:5000

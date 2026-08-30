@@ -14,8 +14,8 @@ set "ANTHROPIC_AUTH_TOKEN=lmstudio"
 set "ANTHROPIC_MODEL=qwen38_mtp"
 set "ANTHROPIC_SMALL_FAST_MODEL=qwen38_mtp"
 
-REM --plugin-dir      : 本地專屬 skills（雲端 Claude 看不到）
-REM --strict-mcp-config: 只載 mcp-local.json，忽略全域的 headroom/serena（省 prompt）
+REM --plugin-dir       : local-only skills (cloud Claude cannot see them)
+REM --strict-mcp-config: load only mcp-local.json, skip global headroom/serena
 echo Launching Claude Code (Qwen3.8-27B MTP, :8001)...
 claude --dangerously-skip-permissions ^
   --plugin-dir "%~dp0local-plugin" ^
