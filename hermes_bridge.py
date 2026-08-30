@@ -63,7 +63,8 @@ def _gpu():
         out = subprocess.run(
             ['nvidia-smi', '--query-gpu=memory.used,utilization.gpu',
              '--format=csv,noheader,nounits'],
-            capture_output=True, text=True, timeout=6).stdout.strip()
+            capture_output=True, timeout=6).stdout.decode(
+                'utf-8', 'replace').strip()
         rows = [r.split(',') for r in out.splitlines() if r.strip()]
         used = [int(r[0]) for r in rows]
         util = [int(r[1]) for r in rows]
@@ -515,8 +516,12 @@ def _act_on_stop(reason, project, sid):
         try:
             r = subprocess.run(
                 [sys.executable, guard, '--json', '--commit'],
-                capture_output=True, text=True, timeout=60)
-            info = json.loads((r.stdout or '{}').strip().splitlines()[-1])
+                capture_output=True, timeout=60)
+            # 不能用 text=True —— 那會用系統預設編碼（Windows 是 cp950），
+            # 守衛的輸出有中文 UTF-8，一解就 UnicodeDecodeError，
+            # 然後被當成「防呆檢查出錯」而放棄接續。
+            out_txt = (r.stdout or b'').decode('utf-8', 'replace').strip()
+            info = json.loads(out_txt.splitlines()[-1] if out_txt else '{}')
         except Exception as e:
             print(f'       防呆檢查出錯，保守起見不自動接續：{str(e)[:60]}',
                   flush=True)
