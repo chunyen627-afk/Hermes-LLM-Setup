@@ -3,6 +3,51 @@
 > Read this first if resuming after a context compaction or new session.
 > Last updated: 2026-08-30 (AXI4 slave wrapper complete, all widths pass).
 
+## ⛔ ACCEPTANCE GATE — a block is NOT done until this exits 0
+
+**Do not declare any block complete based on reading the log yourself.**
+The gate is `simcheck.json` in this directory; it is the definition of "done".
+
+```bash
+SC=C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py
+python $SC --config simcheck.json --list              # what blocks exist, what each requires
+python $SC --config simcheck.json --block axi4_master # gate one block
+python $SC --config simcheck.json --all               # every non-pending block
+```
+
+Exit 0 = PASS, 1 = FAIL. Last line is `SIMCHECK_RESULT {json}`.
+
+The gate fails closed — **silence is never a pass**. It fails when:
+- a checker ran **0 cases** (a zero-case PASS is a failure),
+- a `require_cover` scenario **never happened** (all data compares can be
+  0-bad and the block still fails — that is the point),
+- there is no `SIMEND` line (hung / crashed / ended early),
+- any `ASSERT` fired.
+
+Each testbench must therefore print these markers (keep all existing
+`$display` output as-is — the gate ignores prose):
+
+```verilog
+$display("CHECK data_integrity %0d %0d", n_checked, n_bad);
+$display("COVER back_to_back %0d",   n_b2b);
+$display("ASSERT protocol_viol %0d", n_viol);
+$display("SIMEND %s", (n_bad==0 && n_viol==0) ? "ok" : "fail");
+```
+
+`simcheck.json` carries the required covers per block and their meanings
+(`_cover_meanings`). **Rule for editing it: you may only ADD acceptance
+items.** Removing a `require_cover` to make a test pass is not allowed; if
+one genuinely does not apply, record why — with the date — under
+"已確認行不通的做法" below before removing it.
+
+Some testbenches read data files by relative path (`$readmemh("expected.hex")`).
+Those blocks set `"run_in"` in the config — running from the wrong directory
+makes every case mismatch and looks exactly like broken RTL. `matmul_core`
+is one of these (`run_in: out/mmtest`).
+
+Method, failure-mode table and the full pre-integration checklist:
+`skills/embedded/rtl-sim-verification/references/protocol-interface-verification.md`
+
 ## Goal
 Build an FP32-accumulating matmul datapath in Verilog (BF16 inputs) that matches the
 **C version** (karpathy/llama2.c `run.c::matmul`, line 217), wrapped in an AXI4 slave

@@ -13,28 +13,50 @@
 // significand, so this matches a true-FMA accumulation bit-for-bit too.
 //
 // Verification-only memory: W and x are loaded via $readmemh from hex files
-// (relative to the vvp cwd). The AXI wrapper (later) replaces this with real
-// DDR4/AXI interfaces.
+// (relative to the vvp cwd) when EXTERNAL_LOAD=0. When EXTERNAL_LOAD=1 the
+// initial block is skipped and the consumer writes elements through the load
+// ports below (used by the AXI top-level, which streams W/x in from DDR4).
 //
 // NOTE: results are exposed as a flat packed vector xout_vec (no unpacked-array
 // ports - Icarus Verilog does not support those).
 module matmul_core #(
     parameter D = 288,          // rows of W (number of outputs)
-    parameter N = 288           // reduction length
+    parameter N = 288,          // reduction length
+    parameter EXTERNAL_LOAD = 0 // 1: load via ports (AXI top); 0: $readmemh
 )(
     input  wire        clk,
     input  wire        rst_n,
     input  wire        start,
     output reg         done,
-    output wire [D*32-1:0] xout_vec    // flat view: xout_vec[i*32 +: 32] = xout[i]
+    output wire [D*32-1:0] xout_vec,    // flat view: xout_vec[i*32 +: 32] = xout[i]
+
+    // ---- external element load (active only when EXTERNAL_LOAD=1) ----
+    input  wire        w_load_valid,
+    input  wire [$clog2(D*N)-1:0] w_load_idx,   // linear index i*N+j
+    input  wire [15:0] w_load_data,             // BF16
+    input  wire        x_load_valid,
+    input  wire [$clog2(N)-1:0]  x_load_idx,    // j
+    input  wire [15:0] x_load_data              // BF16
 );
 
-    // ---- input memories (verification-only; $readmemh in initial block) ----
+    // ---- input memories ----
     reg [15:0] w_mem [0:D*N-1];   // row-major W[i][j]
     reg [15:0] x_mem [0:N-1];     // x[j]
     initial begin
-        $readmemh("w.hex", w_mem);
-        $readmemh("x.hex", x_mem);
+        if (!EXTERNAL_LOAD) begin
+            $readmemh("w.hex", w_mem);
+            $readmemh("x.hex", x_mem);
+        end
+    end
+
+    // external element load (AXI top-level path). One element per cycle.
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            ;   // memories are loaded by the consumer after reset
+        end else if (EXTERNAL_LOAD) begin
+            if (w_load_valid) w_mem[w_load_idx] <= w_load_data;
+            if (x_load_valid) x_mem[x_load_idx] <= x_load_data;
+        end
     end
 
     // ---- results (internal array, flattened to xout_vec) ----

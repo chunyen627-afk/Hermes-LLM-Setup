@@ -1,0 +1,132 @@
+{
+  "_stages": {
+    "_doc": "分階段驗收標準, 完整版見 skills/embedded/rtl-sim-verification/references/staged-acceptance.md",
+    "0_define": "定標準 (不寫 RTL): 誤差範圍/外部參考實作/require_cover 清單寫進文件",
+    "1_function": "純功能: 對外部參考 N 筆比對, n_checked > 0 且 0 bad",
+    "2_interface": "介面契約: 協定 assertion 零觸發 + 每個情境都真的跑到 (最常被跳過的一階)",
+    "3_integration": "整合: end-to-end 對參考實作, 且子模組驗收仍全綠",
+    "4_timing": "時序/資源: 合成 + STA; 本機無 Vivado -> 一律標 [ASSUMPTION]",
+    "_rule": "不要跳階段。第 2 階沒過就進第 3 階, 症狀會是『整合後偶爾錯幾筆』, 那是最難查的一類 bug。"
+  },
+
+  "_comment": [
+    "驗收設定檔 — 每個 block 做完都要跑到綠，才算完成。",
+    "跑法: python <skills>/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block <name>",
+    "或直接跑全部: ... --config simcheck.json --all",
+    "exit 0 = PASS, 1 = FAIL。最後一行 SIMCHECK_RESULT {json} 是機器可讀的結果。",
+    "",
+    "改這個檔的規則: 只能「加」驗收項目, 不能為了讓測試過而「拿掉」require_cover。",
+    "真的要拿掉某項, 理由必須寫進 HANDOFF.md 的『已確認行不通的做法』並註明日期。"
+  ],
+
+  "script": "C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py",
+
+  "blocks": {
+    "f32_units": {
+      "status": "done",
+      "stage": "1_function",
+      "note": "bit-exact vs 編譯的 C oracle, 已複驗",
+      "tb": "tb/tb_f32_units.v",
+      "src": ["rtl/f32_mul.v", "rtl/f32_add.v"],
+      "top": "tb_f32_units",
+      "require_cover": []
+    },
+
+    "matmul_core": {
+      "status": "done",
+      "stage": "1_function",
+      "note": "40/40 bit-exact vs c_matmul_oracle.c, 已複驗",
+      "_gotcha": "TB 用 $readmemh(\"expected.hex\") 相對路徑, 必須在 out/mmtest/ 跑, 不然全部 mismatch (看起來像 RTL 壞掉, 其實是 cwd 錯)",
+      "tb": "tb/tb_matmul_core.v",
+      "src": ["rtl/matmul_core.v", "rtl/f32_mul.v", "rtl/f32_add.v"],
+      "top": "tb_matmul_core",
+      "run_in": "out/mmtest",
+      "require_cover": []
+    },
+
+    "axi4_slave_reg": {
+      "status": "done",
+      "stage": "2_interface",
+      "note": "32/64/128/256 四種位寬全過, 已複驗",
+      "tb": "tb/tb_axi4_slave_reg.v",
+      "src": ["rtl/axi4_slave_reg.v"],
+      "top": "tb_axi4_slave_reg",
+      "sweep": "AXI_DATA_WIDTH=32,64,128,256",
+      "require_cover": []
+    },
+
+    "axi4_master": {
+      "status": "in_progress",
+      "stage": "2_interface",
+      "note": "read path 63 筆全錯 + TEST 3 rqcnt=18 卡死。卡在階段 2, 不要進整合。",
+      "tb": "tb/tb_axi4_master.v",
+      "src": ["rtl/axi4_master.v"],
+      "top": "tb_axi4_master",
+      "require_cover": [
+        "single_burst",
+        "back_to_back",
+        "boundary_cross",
+        "backpressure",
+        "outstanding_max",
+        "error_response"
+      ]
+    },
+
+    "matmul_top": {
+      "status": "pending",
+      "stage": "3_integration",
+      "blocked_by": "axi4_master 階段 2 未過",
+      "note": "register map + AXI master + core 整合, end-to-end vs C oracle",
+      "tb": "tb/tb_matmul_top.v",
+      "src": [
+        "rtl/matmul_top.v",
+        "rtl/matmul_core.v",
+        "rtl/axi4_slave_reg.v",
+        "rtl/axi4_master.v",
+        "rtl/f32_mul.v",
+        "rtl/f32_add.v"
+      ],
+      "top": "tb_matmul_top",
+      "require_cover": [
+        "end_to_end_match",
+        "weights_from_ddr",
+        "result_written_back",
+        "status_polling"
+      ]
+    },
+
+    "cdc": {
+      "status": "pending",
+      "stage": "2_interface",
+      "note": "async FIFO + gray-pointer sync, 跨時脈域控制",
+      "tb": "tb/tb_cdc.v",
+      "src": ["rtl/cdc_fifo.v"],
+      "top": "tb_cdc",
+      "require_cover": [
+        "slow_to_fast",
+        "fast_to_slow",
+        "fifo_full",
+        "fifo_empty",
+        "reset_during_traffic"
+      ]
+    }
+  },
+
+  "_cover_meanings": {
+    "single_burst": "單一 burst 讀寫, 資料 bit-exact",
+    "back_to_back": "前一筆 B 還沒回就發下一個 AW — 沒數到代表管線化從沒被測過",
+    "boundary_cross": "傳輸被拆成多個合法 burst 的次數 (4KB 是 AXI 硬性規定)",
+    "backpressure": "valid && !ready 發生的拍數 — ready 恆 1 等於反壓完全沒測",
+    "outstanding_max": "outstanding 壓到宣告上限的次數 — 上限守不守得住",
+    "error_response": "回應碼非 0 的次數 — SLVERR/DECERR 有沒有被往上報",
+    "end_to_end_match": "整條路徑跑完的結果與 C oracle 逐筆相同的次數",
+    "weights_from_ddr": "權重真的從 AXI 讀進來 (不是 $readmemh 抄捷徑) 的次數",
+    "result_written_back": "xout 真的透過 AXI 寫回去的次數",
+    "status_polling": "透過 register map 讀 STATUS 等到 done 的次數",
+    "slow_to_fast": "慢時脈域送到快時脈域的傳輸數",
+    "fast_to_slow": "快到慢的傳輸數",
+    "fifo_full": "FIFO 滿並產生反壓的次數",
+    "fifo_empty": "FIFO 空並讓下游等待的次數",
+    "reset_during_traffic": "傳輸進行中被 reset 且正確復原的次數"
+  }
+}

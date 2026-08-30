@@ -1,7 +1,7 @@
 ---
 name: rtl-sim-verification
-description: "Build + verify RTL circuits via Icarus simulation."
-tags: [rtl, verilog, simulation, iverilog, verification, digital-design, waveform]
+description: "Build + verify RTL circuits via Icarus simulation. Defines the staged acceptance standard for hardware work -- what to verify at each stage (define standard / function / interface contract / integration / timing) and the machine-decidable exit condition for each. Covers bus and handshake protocol verification (AXI, Avalon, Wishbone, valid-ready), how to tell whether a failing test means the DUT or the testbench is wrong, and why you must never bend the design to fit a broken test model."
+tags: [rtl, verilog, simulation, iverilog, verification, digital-design, waveform, axi, bus, protocol, handshake, valid-ready, backpressure, testbench, memory-model, acceptance-criteria, staged-verification, coverage, done-definition]
 related_skills: [hardware-design-tradeoffs, verification-discipline, firmware-workflow, systematic-debugging]
 ---
 
@@ -11,6 +11,34 @@ related_skills: [hardware-design-tradeoffs, verification-discipline, firmware-wo
 然後**證明它對**——不是「看起來對」。 Core discipline comes from
 [[verification-discipline]]: multiple independent indicators cross-check each
 other + verify your measurement tool first.
+
+---
+
+## 零、先決定「什麼時候驗什麼」
+
+**動手之前先看 `references/staged-acceptance.md`。**
+
+硬體跟軟體最大的差別是回饋速度：軟體跑一下就知道對不對，
+硬體「模擬跑完了」不代表對，而且**沒有任何東西會告訴你
+「你這輪只驗了一半」**。所以每個階段的出場條件要**事先**寫死。
+
+| # | 階段 | 出場條件（必須機器可判定） |
+|---|---|---|
+| 0 | 定標準（不寫 RTL） | 誤差範圍、外部參考實作、`require_cover` 清單都已寫進文件 |
+| 1 | 純功能 | 對外部參考 N 筆比對，`n_checked > 0` 且 0 bad |
+| 2 | **介面契約** | 協定 assertion 零觸發 **+ 每個情境都真的跑到** |
+| 3 | 整合 | end-to-end 對參考實作，且子模組驗收仍全綠 |
+| 4 | 時序/資源 | 合成 + STA；沒工具就誠實標 `[ASSUMPTION]` |
+
+**第 2 階最常被跳過，也最容易出事。** 功能對了不代表接得上；
+握手的錯不會顯示成錯誤數值，會顯示成「卡住」「資料重複」
+「偶爾少一筆」——很容易被誤判成測試環境的問題。
+第 2 階沒過就進第 3 階，症狀會是「整合後偶爾錯幾筆」，那是最難查的。
+
+**階段 0 的產出是 `simcheck.json` 骨架**（每個 block 的 `require_cover`
+先填好、`status: pending`），不是程式碼。
+先寫 RTL、等模擬失敗才想「怎樣算對」的話，
+標準會不自覺地被寫成「剛好讓現在這版通過」。
 
 ---
 
@@ -194,6 +222,84 @@ the DUT. Use three paths that fail independently:
 All three agree → done. Disagreement localizes the bug (DUT vs checker vs your
 sampling math).
 
+### 用 `simcheck.py` 當驗收關卡（別自己判 PASS）
+
+`references/scripts/simcheck.py` 是一支通用的驗收閘門：
+**它不看 log 裡的人話，只認機器可判定的標記行**，
+而且 **fail closed —— 沒有證據就是 FAIL**。
+
+testbench 只要多印四種標記（其他 `$display` 照舊）：
+
+```verilog
+$display("CHECK data_integrity %0d %0d", n_checked, n_bad);  // 0 筆 = FAIL
+$display("COVER back_to_back %0d", n_b2b);                   // 0 次 = FAIL
+$display("ASSERT crosses_4kb %0d", n_viol);                  // 非 0 = FAIL
+$display("SIMEND %s", (errors==0) ? "ok" : "fail");          // 沒印 = FAIL
+```
+
+```bash
+python simcheck.py --tb tb/tb_foo.v --src rtl/foo.v --top tb_foo     --require-cover back_to_back,boundary_cross,backpressure
+python simcheck.py --tb ... --top tb_foo --sweep DATA_WIDTH=32,64,128,256
+python simcheck.py --cmd "pytest -q tests/" --require-cover slow_path
+```
+
+exit 0 = PASS，1 = FAIL，最後一行是 `SIMCHECK_RESULT {json}`。
+不是 Verilog 也能用（`--cmd`），標記協定跟語言無關。
+
+### 專案起手就建 `simcheck.json`
+
+不要每次手打參數。專案根目錄放一份設定檔，**把每個 block 的驗收標準先定下來**，
+「完成」的定義就從腦子裡搬到檔案裡：
+
+```json
+{
+  "blocks": {
+    "axi4_master": {
+      "status": "in_progress",
+      "tb": "tb/tb_axi4_master.v",
+      "src": ["rtl/axi4_master.v"],
+      "top": "tb_axi4_master",
+      "require_cover": ["single_burst", "back_to_back", "boundary_cross",
+                        "backpressure", "outstanding_max", "error_response"]
+    },
+    "matmul_core": {
+      "status": "done",
+      "tb": "tb/tb_matmul_core.v",
+      "src": ["rtl/matmul_core.v"],
+      "top": "tb_matmul_core",
+      "run_in": "out/mmtest",
+      "require_cover": []
+    }
+  },
+  "_cover_meanings": { "back_to_back": "前一筆回應還沒回就發下一筆 ..." }
+}
+```
+
+```bash
+python simcheck.py --config simcheck.json --list             # 有哪些 block、各要什麼
+python simcheck.py --config simcheck.json --block axi4_master
+python simcheck.py --config simcheck.json --all              # 跑全部非 pending
+```
+
+- 路徑相對於設定檔所在目錄
+- `run_in` 是**執行**目錄（跟編譯目錄分開）：
+  testbench 用 `$readmemh("expected.hex")` 這種相對路徑時，
+  在錯的目錄跑會**每一筆都 mismatch，看起來完全像 RTL 壞掉**。
+  踩過一次就把它寫進設定檔，不要靠記憶。
+- `status: pending` 的 block `--all` 會跳過
+- **改設定檔的規則：只能「加」驗收項目。**
+  為了讓測試過而拿掉 `require_cover` 是作弊；
+  真的不適用就把理由和日期寫進 HANDOFF 的「已確認行不通的做法」再拿掉。
+
+把這份設定檔的跑法寫進 HANDOFF.md 最上面，
+下一輪（或接手的人）第一眼就知道什麼叫做完成。
+
+**`--require-cover` 是這支腳本最有價值的地方**：
+它抓的是「所有檢查都 0 bad、但某個情境根本沒跑到」——
+傳統判準會說 PASS，實際上那塊完全沒驗過。
+把整合前驗收清單的每一項都寫成一個 `COVER`，
+就沒辦法在漏測的情況下宣告完成。
+
 ### ⚠ 「PASS」之前先確認測試真的跑了
 
 2026-08-29 踩到：testbench 印出
@@ -221,6 +327,77 @@ python gen_vectors.py && wc -l vectors/*.txt
 
 這跟「`0 × 0 = 0` 通過不代表任何事」是同一類錯誤 ——
 **聚合數字會把「什麼都沒發生」偽裝成「一切正常」**。
+
+---
+
+## 二之二、測試環境壞掉時，改哪一邊？
+
+**這是最容易做錯的一個判斷，而且做錯的代價是永久的。**
+
+測試失敗時，錯的可能是 DUT，也可能是 testbench / 參考模型 / 對手模型。
+查出來是**測試環境**的問題之後，會出現兩條路：
+
+1. 修測試環境，讓它能正確地測目前的設計
+2. **改設計**，讓它繞開測試環境撐不住的那個情況
+
+**第 2 條路要非常小心。** 它會把一個「為了讓測試過」的限制
+永久燒進設計裡，而且事後沒人看得出那個限制的真正來源 ——
+六個月後有人問「為什麼這裡不能管線化」，答案已經沒人記得了。
+
+### 兩個判斷題
+
+要改設計，理由必須**設計本身站得住腳**，不能是「這樣我的模型就不會壞」。
+
+- **如果測試環境是完美的，我還會做這個改動嗎？**
+  答案是「不會」→ 去修測試環境。
+- **這個限制寫進規格書的話，我說得出理由嗎？**
+  「本 IP 不支援 ○○，因為……」後面接不出東西
+  → 那不是設計決定，是在遷就工具。
+
+### 實際案例（2026-08-30, AXI4 master）
+
+背靠背的寫入交易讓 memory model 算錯位址。
+診斷正確：model 只追一筆交易，撐不住協定允許的管線化。
+
+當時想的修法是**改設計** —— 讓 master 等回應才發下一筆，
+理由是「這個加速器不需要跨交易的寫入管線化」。
+
+聽起來合理，但套上面兩題：
+- 測試環境完美的話會這樣改嗎？**不會。**
+- 是規格決定嗎？不是 —— 而且它讓**寫入頻寬直接掉一整個往返延遲**，
+  對 memory-bound 的加速器是實打實的損失。
+
+正解是把 model 的寫入端也改成 queue（讀取端本來就是 queue，照抄即可）。
+
+### 但也有真的該改設計的時候
+
+不是所有「測試環境撐不住」都該修測試環境。
+如果那個情況**在真實系統裡也不會發生**，簡化設計是對的。差別在理由：
+
+- ✗「我的模型只追一筆交易」→ **工具限制**
+- ✓「對接的那顆 IP 本來就只接受一筆 outstanding」→ **系統約束**
+
+**後者要有依據**（datasheet、IP 手冊、規格書），不能用猜的。
+沒依據就標成 `[ASSUMPTION]` 寫進架構文件，
+別讓它靜靜躺在原始碼裡變成無人知曉的限制。
+
+### 連帶原則：不要在一個大破口旁邊做局部推理
+
+同一輪還踩到另一件事：只盯著寫入路徑某一筆的錯位做了很細的分析，
+**完全沒注意到同一次模擬裡讀取路徑從第一筆就 63 筆全錯、
+而且下一個 test 直接 watchdog 卡死。**
+
+- 只讀 log 尾巴、或只 grep 自己關心的那個訊號，會錯過更大的問題
+- **先數一遍：這次跑總共幾個 error？分佈在哪幾個 test？**
+  再決定要先追哪一個
+- 多個測試同時爛掉時，**最先壞的那個通常是根因**，
+  後面的往往只是它的下游效應。
+  從第一個 test 的第一筆錯開始查，不要從最後一筆
+
+握手 / 匯流排介面的完整驗證方法（對手模型怎麼寫、
+失敗模式對照表、assertion 範本、整合前驗收清單）在
+`references/protocol-interface-verification.md` ——
+AXI / Avalon / Wishbone / 自訂 valid-ready 都適用。
 
 ---
 
