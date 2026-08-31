@@ -248,23 +248,28 @@ module xspi_slave #(
                     end else begin
                         // Capture all four DDR address bytes on rising edges,
                         // MSB first (the master drives each byte one falling
-                        // edge before its sampling rising edge). Assemble the
-                        // full word one cycle after the last byte is latched so
-                        // every byte is valid when it is read.
+                        // edge before its sampling rising edge).
                         case (addr_cnt)
                             2'd0: addr_b3 <= xspi_io[7:0];
                             2'd1: addr_b2 <= xspi_io[7:0];
                             2'd2: addr_b1 <= xspi_io[7:0];
-                            default: begin
-                                addr_b0   <= xspi_io[7:0];
-                                addr_reg  <= {addr_b3, addr_b2, addr_b1, addr_b0};
-                                dummy_cnt <= dummy_n;
-                                phase     <= (dummy_cnt != 8'd0) ? P_DUMMY : P_DATA;
-                            end
+                            default: addr_b0 <= xspi_io[7:0];   // 2'd3
                         endcase
-                        if (addr_cnt != 2'd3)
+                        if (addr_cnt == 2'd3) begin
+                            phase <= P_ADDR_D;   // all bytes latched; assemble next cycle
+                        end else begin
                             addr_cnt <= addr_cnt + 2'd1;
+                        end
                     end
+                end
+
+                P_ADDR_D: begin
+                    // All four address bytes are now settled; assemble the word
+                    // and move on. (Frame cannot end here -- the host holds CS
+                    // low through the whole frame.)
+                    addr_reg  <= {addr_b3, addr_b2, addr_b1, addr_b0};
+                    dummy_cnt <= dummy_n;
+                    phase     <= (dummy_cnt != 8'd0) ? P_DUMMY : P_DATA;
                 end
 
                 P_DUMMY: begin
@@ -471,7 +476,7 @@ module xspi_slave #(
     reg  ctl_push;
     always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n)      ctl_push <= 1'b0;
-        else              ctl_push <= ((phase == P_ADDR) && (addr_cnt == 2'd3) && is_read) ||
+        else              ctl_push <= (is_read && phase == P_ADDR_D) ||
                                       (cs_rise && (phase == P_DATA) && !is_read);
     end
 
