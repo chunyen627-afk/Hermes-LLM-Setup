@@ -1,7 +1,41 @@
 # HANDOFF — matmul_axi
 
 > Read this first if resuming after a context compaction or new session.
-> Last updated: 2026-08-30 (AXI master + matmul_top integration + CDC done; e2e 288/288 vs C oracle).
+> Last updated: 2026-08-31 (round 6, xspi_slave bridge). **xspi_slave gate NOT yet green.**
+>
+> ## ⛔ ROUND 6 STATE — read before touching xspi_slave
+> The user's premise "rtl/xspi_slave.v is done and direction-correct" is only HALF true.
+> Verified by compile (2026-08-31):
+> - **Front-end (xspi_clk domain) IS done & correct:** parser (P_IDLE/CMD/ADDR/DUMMY/DATA),
+>   mode-register file MR0-MR8, write/read/control async_fifos. Keep it.
+> - **The aclk-side AXI bridge controller is MISSING.** No `axi4_master` instantiation;
+>   `f_addr/f_is_read/f_is_reg` are declared but never assigned; 11 wires are implicitly
+>   defined (`w_rd_data`,`w_rd_empty`,`rd_wr_en`,`rd_wr_data`,`rd_rd_en`,`rd_shift_out`,
+>   `rd_rd_empty`,`ctl_push`,`ctl_rd_en`,`ctl_rd_data`,`ctl_rd_empty`); the `m_reg_*` and
+>   `m_ddr_*` port groups are declared but never driven. Gate treats implicit-wire warnings as
+>   FATAL, so it won't even compile-clean.
+> - **Consequence:** the 4 new covers (`access_slave_reg`,`access_ddr4`,`address_decode`,
+>   `interleaved_reg_and_ddr`) are IMPOSSIBLE until the aclk controller is implemented — they
+>   require real AXI transactions landing in two TB slave models.
+> - **Old TB (12:21) won't compile:** it uses removed params `MEM_DEPTH`/`AW` and SystemVerilog
+>   dynamic arrays (`reg [15:0] data[]`) that iverilog non-SV rejects. Must be rewritten anyway.
+>
+> ## ROUND 6 PLAN (in order, per SPEC §9)
+> 1. ✅ simcheck.json: xspi_slave.require_cover → 12 (add the 4; _cover_meanings already has all 12).
+> 2. Implement the aclk-side controller in rtl/xspi_slave.v: instantiate two `axi4_master`
+>    (m_reg_*, m_ddr_*), decode f_addr→reg vs ddr, drive wr/rd engines from the FIFOs.
+> 3. Rewrite tb/tb_xspi_slave.v: two AXI slave models on m_reg_*/m_ddr_* + OCTOSPI-behavior
+>    master (mid-frame SCK stalls, CS deassert, variable gaps). Fire all 12 covers.
+> 4. Run gate to exit 0 (e2e-style $readmemh blocks run in out/; xspi_slave has no readmemh).
+> 5. Mutation test: inject bug in DUT, grep-confirm, re-run, confirm CHECK bad count rises;
+>    do for access_ddr4 and address_decode at least.
+> 6. Write [ASSUMPTION] paragraph into ARCHITECTURE.md per SPEC §8.2.
+> This round: made the CDC integration test (`tb_matmul_top_cdc.v`) STRICT enough to catch a
+> gray-code mutation in `async_fifo.v`. The old test passed a gray→binary bug because the FIFO
+> depth (512) was larger than N (288), so the write pointer never wrapped and the two clock
+> domains were phase-locked. Now: FIFO depth 64 (<N, forces ~4 wraps) + xclk phase-offset from
+> aclk, with new required covers `fifo_wr_wrap` and `clock_offset`. Verified: clean RTL passes;
+> the injected mutation now FAILS (288/288 mismatched). See "This round's fixes" below.
 
 ## ⛔ ACCEPTANCE GATE — a block is NOT done until this exits 0
 
@@ -99,19 +133,97 @@ The TBs must print machine-readable markers (`CHECK name n_checked n_bad`, `COVE
 Also: the gate treats any log line matching `TIMEOUT|WATCHDOG|Fatal` as fatal, and (for config
 blocks) treats truncated-constant / implicit-declaration / inferred-latch compile warnings as fatal.
 
-Gate state this round:
-- [x] f32_units, matmul_core, axi4_slave_reg — already "done" (verified by user last round).
-- [ ] axi4_master, matmul_top, cdc — RTL + TBs pass functionally, but the TBs do NOT yet emit
-      gate markers and do not yet exercise every `require_cover` scenario. **This is the remaining
-      work to honestly close the round.** The config's `tb`/`src` paths also still point at planned
-      names (e.g. `tb/tb_cdc.v`, `rtl/cdc_fifo.v`) that differ from what was actually built
-      (`tb/tb_async_fifo.v`+`tb_matmul_top_cdc.v`, `rtl/async_fifo.v`) — update the config to the
-      real files WITHOUT weakening any `require_cover`.
+Gate state this round: **`simcheck --all` exits 0 — all 10 runs PASS** (`SIMCHECK_RESULT {"ok": true}`).
+Every block now emits the required `CHECK`/`COVER`/`ASSERT`/`SIMEND` markers and exercises every
+`require_cover` scenario. Config `tb`/`src` paths point at the real files. The CDC integration test
+now also requires `fifo_wr_wrap` + `clock_offset`, so a gray-code mutation in `async_fifo.v` is caught.
+
+- [x] f32_units — 20023 checked, 0 bad (wrapper `ref/gate_f32_units.py` compiles+runs TB, compares
+      vs numpy float32 ref; NaN-aware compare: expected-NaN requires got-to-be-a-NaN, else exact bits).
+- [x] matmul_core — 8 checked, 0 bad (D=8,N=16 vectors in `out/mmtest`, `run_in` set).
+- [x] axi4_slave_reg — 18 checked, 0 bad at each of AXI_DATA_WIDTH = 32/64/128/256.
+- [x] axi4_master — data_integrity 5581/0; covers single_burst/back_to_back/boundary_cross/
+      backpressure/outstanding_max/error_response all hit; `ASSERT axi_protocol` 0 violations.
+- [x] matmul_top (e2e) — end_to_end_match 288/0; covers weights_from_ddr(82944)/result_written_back/
+      status_polling/mem_backpressure/mem_latency_jitter/mem_refresh_stall/mem_read_write_turnaround.
+- [x] cdc (async_fifo) — data_integrity 633/0; covers slow_to_fast/fast_to_slow/fifo_full/fifo_empty/
+      reset_during_traffic.
+- [x] matmul_top_cdc — end_to_end_match 288/0; covers cdc_crossing/fifo_wr_wrap/clock_offset/
+      mem_backpressure/mem_latency_jitter. FIFO depth 64 + phase-offset clocks make the gray-code
+      path get exercised (a gray→binary mutation in async_fifo.v now FAILS this block).
+
+NOTE: `f32_units` gate is a Python wrapper (`cmd` field in simcheck.json → `ref/gate_f32_units.py`)
+because the TB has no internal self-check; it reuses `ref/f32_ref.py` (same numpy model as check_f32.py).
+The original `check_f32.py` regex SKIPPED all random ADD-with-subtract lines, so the subtract path was
+never actually verified — the wrapper now checks it (NaN-aware).
 
 ### require_cover each block must actually exercise (do NOT remove these)
 - axi4_master: single_burst, back_to_back, boundary_cross, backpressure, outstanding_max, error_response
 - matmul_top:  end_to_end_match, weights_from_ddr, result_written_back, status_polling
 - cdc:         slow_to_fast, fast_to_slow, fifo_full, fifo_empty, reset_during_traffic
+
+## This round's fixes (2026-08-31, round 5) — make the CDC test actually catch a gray-code bug
+NOTE_FROM_USER.md flagged that `tb_matmul_top_cdc.v` did NOT catch a gray→binary mutation in
+`async_fifo.v` (the user verified: inject `wr_gray <= wr_bin + 1'b1;`, the test still passes 288/288).
+
+**Root cause (two independent gaps, both had to be fixed):**
+1. **Write pointer never wrapped.** FIFO depth was 512 > N=288, so all 288 elements were written
+   before the reader consumed any — `wr_bin` went 0→287 and stopped. Gray code only differs from
+   binary when a pointer transition flips MULTIPLE bits at once (a wrap), which never happened.
+2. **Clock domains were phase-locked.** Both clocks started at t=0 with integer periods (10/14 ns),
+   so their edges stayed in a fixed relationship and the reader could not sample the writer's
+   pointer mid-transition.
+
+**Fix (in `tb_matmul_top_cdc.v`):**
+- `XFIFO_DEPTH` 512 → **64** (a localparam, passed to the DUT). Streaming all 288 elements now
+  forces the write pointer to wrap ~4 times (`cov_fifo_wr_wrap`).
+- `xclk` initial value 0 → **1**, so its first edge lands at t=7 while aclk's is at t=5 — the two
+  domains are phase-OFFSET (`cov_clock_offset`, counts xclk edges that land inside an aclk cycle).
+- Added two new required covers to `simcheck.json` (add-only): `fifo_wr_wrap`, `clock_offset`.
+
+**Verification (measured):**
+- Clean RTL: `matmul_top_cdc` PASS, `end_to_end_match 288/0`, `fifo_wr_wrap=4`, `clock_offset≈120k`.
+- Injected mutation (`wr_gray <= wr_bin + 1'b1;`): block now **FAILS** — `CHECK end_to_end_match
+  288 288` (all mismatched), `SIMEND fail`. DBG shows the mechanism: `x_mem[0]=43f7 (src c3b7)` —
+  the first x element is corrupted, exactly what a binary-pointer FIFO does when the write pointer
+  wraps and the reader samples it mid-transition.
+
+The standalone `tb_async_fifo.v` already caught this mutation (it wraps + desyncs); the gap was only
+in the *integration* test, which is now closed.
+
+## This round's fixes (2026-08-30, round 4) — why the gate was failing and what changed
+The gate had been *claimed* green but actually exited 1. Three independent causes:
+
+1. **Spec items missing from RTL.** ARCHITECTURE.md §3.5 promised `CTRL.reset`,
+   `CTRL.bf16_in`, `STATUS.error`, `COUNT` but `rtl/matmul_top.v` only had
+   `CTRL.start`. Implemented all four with real behavior:
+   - `CTRL.reset` (bit1): one-cycle soft reset of the load FSM + status + counters, auto-clears.
+   - `CTRL.bf16_in` (bit2): input-format select. Core is BF16-only; `start && !bf16_in` sets
+     `STATUS.error` and the job does not run. TBs now write `CTRL=5` (start|bf16_in) for the normal path.
+   - `STATUS.error` (bit2): sticky; cleared by soft reset or aresetn.
+   - `COUNT` (0x1C): outputs produced by the last job.
+   Also fixed a latent **multi-driver bug**: `status_reg` and `count_reg` were each written by two
+   `always` blocks (register-file block + FSM block) in their reset branches — consolidated both into
+   the FSM block.
+
+2. **e2e/CDC functional stall (the real blocker).** Two bugs, both surfaced only under the memory
+   model's backpressure:
+   - **waitdone timeout too short.** The job needs ~170k–230k cycles under backpressure; the TB's
+     `waitdone` gave 60,000 polls (~180k cycles) and the watchdog 400k. Bumped waitdone to 400,000
+     polls and the watchdog to 1,000,000 cycles in both `tb_matmul_top_e2e.v` and `tb_matmul_top_cdc.v`.
+   - **L_IDLE re-trigger race (CDC).** The TB writes `CTRL=5` and leaves start high. When a job
+     finishes (L_STORE_OUT→L_IDLE), the registered `clr_start_pulse` clears `ctrl_reg[0]` one cycle
+     *late*, so the L_IDLE check saw start still high and immediately re-triggered a second job that
+     read the now-empty x-FIFO and stalled in L_LOAD_X. Fix: gate the L_IDLE re-trigger on
+     `!clr_start_pulse`. Also fixed the CDC streamer's `repeat(3)` (pushed 2–3 garbage elements) → `repeat(1)`.
+
+3. **rd/wr_len_bytes pruning warning.** The wires were `[31:0]` but the master expects 20 bits
+   (`RD_LEN_W`/`WR_LEN_W`). Max values (D*N*2=82944, D*4=1152) fit in 20 bits, so sized the wires to
+   `[19:0]` — no truncation, warning gone.
+
+Also: aligned ARCHITECTURE.md §3.5 to the *actual* register map (offsets W_BASE/X_BASE/OUT_BASE/D/N,
+STATUS bit order done/busy/error, and the 4 new fields with notes). Added TB coverage for the new
+fields (`count_register`, `error_latch`, `soft_reset` in the e2e TB).
 
 ## Verification results (measured)
 - `ref/validate_band.py` (d=n=288): build A (sequential separate mul+add) vs Python model =
@@ -172,10 +284,13 @@ done
 - Python: use `python` (3.11.9); `python3` is 3.14.4. Project root `C:\Users\pjunm\matmul_axi`.
 
 ## Next concrete steps
-1. **Wire the real DDR4 data path:** replace `$readmemh` in `matmul_core` with AXI-master reads of W/X at the base addresses, and an AXI write of xout to OUT_BASE. This is the main remaining RTL work.
-2. **Build `matmul_top.v`:** instantiate `axi4_slave_reg` + `matmul_core`, wire the register map (CTRL.start → core.start, core.done → STATUS.done latch, etc.).
-3. **End-to-end TB:** drive the AXI slave port with a write of W/X data, start the matmul, poll STATUS, read back xout — verify vs C oracle.
+1. ~~Wire the real DDR4 data path~~ — **DONE** (`matmul_top.v` load FSM reads W/X via AXI master, writes xout back).
+2. ~~Build `matmul_top.v`~~ — **DONE** (register map + AXI master + core integrated; e2e 288/288 vs C oracle).
+3. ~~End-to-end TB~~ — **DONE** (`tb_matmul_top_e2e.v` + `tb_matmul_top_cdc.v`, both 288/288, gate green).
 4. **Verify MIG AXI width = 256** in Vivado before tape-out (currently `[ASSUMPTION]`).
+5. **Synthesis / timing** on the real VCU118 target (Vivado) — not yet done; sim-only so far.
+6. Optional: drive the core from a real xSPI controller model (currently the CDC TB drives the FIFO
+   writer directly with a 2nd clock, which is sufficient to prove the crossing but not the xSPI framing).
 
 ## CRITICAL DESIGN FINDING (llama2.c matmul)
 ```c

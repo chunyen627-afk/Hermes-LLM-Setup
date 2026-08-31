@@ -213,13 +213,14 @@
     "xspi_slave": {
       "status": "in_progress",
       "stage": "2_interface",
-      "note": "PSRAM-compatible xSPI slave. Target = AP Memory APS256XX 32MB Octal PSRAM @0x90000000 (XSPI1). Contract derived from the REAL board BSP source (aps256xx.c/h + stm32h7s78_discovery_xspi.c), written up in ARCHITECTURE.md section 9. Frame = [instr 8b SDR][addr 32b DDR=4cyc][dummy latency-1=4cyc][data DDR 16b/cyc]. Boot: Reset(0xFF)->ReadReg/WriteReg MR0/MR4/MR8->EnableMemoryMapped. Memory-mapped read=0x20 / write=0xA0 (linear burst, x8). TB drives a realistic OCTOSPI master model and must fire all 8 covers.",
+      "note": "xSPI->AXI BRIDGE (no own memory). Target = AP Memory APS256XX 32MB Octal PSRAM @0x90000000 (XSPI1); STM32 side looks like that PSRAM, FPGA side is AXI master forwarding every access to matmul_top.s_axi_* (reg region 0x9000_0000..0FFF) or MIG DDR4 (>=0x9001_0000). Contract derived from the REAL board BSP source (aps256xx.c/h + stm32h7s78_discovery_xspi.c), written up in ARCHITECTURE.md section 9. Frame = [instr 8b SDR][addr 32b DDR=2cyc][dummy N][data DDR 16b/cyc]. Boot: Reset(0xFF)->ReadReg/WriteReg MR0/MR4/MR8. Memory-mapped read=0x20/write=0xA0 (linear burst, x8). TB drives a realistic OCTOSPI master model (mid-frame SCK stalls, CS deassert, variable gaps) + two AXI slave models on m_reg_*/m_ddr_* and must fire all 12 covers.",
       "_why": "沒有它整個系統接不起來 —— activation 進不來、結果出不去。matmul IP 再完整也只是個孤島",
       "_scope": "位元流解析(命令/位址/資料分段, DDR address+data) + 模式暫存器檔(MR0-MR8, APM ID) + 跨時脈域(xspi_clk -> aclk, 用現成的 async_fifo) + 當 AXI master 寫 DDR4。matmul_top 已經預留 xspi_clk 與 X_FROM_XSPI 參數",
       "_note_vivado": "Vivado 的 AXI Quad SPI 不適用 —— 那是 FPGA 當 SPI master 用的, 且 AXI-Lite 介面不能當資料通道。自己寫比較實在, 核心邏輯比 axi4_master 簡單",
       "tb": "tb/tb_xspi_slave.v",
       "src": [
         "rtl/xspi_slave.v",
+        "rtl/axi4_master.v",
         "rtl/async_fifo.v"
       ],
       "top": "tb_xspi_slave",
@@ -231,7 +232,11 @@
         "cs_deassert_mid_transfer",
         "dummy_cycle_timing",
         "clock_ratio_extremes",
-        "irregular_host_timing"
+        "irregular_host_timing",
+        "access_slave_reg",
+        "access_ddr4",
+        "address_decode",
+        "interleaved_reg_and_ddr"
       ],
       "_must": "接得起來是驗收標準不是目標：STM32 的初始化流程（讀 ID/設 mode register/latency 校準）要支援，不然它開機就掛住，後面全部免談",
       "_spec_source": "CONFIRMED from board BSP: C:/Users/pjunm/tetris_h7s78/cube/Drivers/BSP/Components/aps256xx/{aps256xx.c,aps256xx.h} + bsp/stm32h7s78_discovery_xspi.c. Full contract in ARCHITECTURE.md section 9 (device identity, opcodes, frame structure, boot sequence, memory-mapped path, assumptions)."

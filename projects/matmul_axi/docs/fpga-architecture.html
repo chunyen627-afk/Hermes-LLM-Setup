@@ -1,0 +1,374 @@
+<title>xSPI 加速器架構</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap">
+
+<style>
+  :root {
+    --bg:        #F7F8F9;
+    --surface:   #FFFFFF;
+    --surface-2: #EDF0F2;
+    --ink:       #14181B;
+    --ink-2:     #45525A;
+    --ink-3:     #6F7F88;
+    --rule:      #D3DADE;
+    --axi:       #2E7D9E;
+    --axi-soft:  #E3F0F6;
+    --spi:       #B87A2E;
+    --spi-soft:  #FAF0E0;
+    --hot:       #B34438;
+    --hot-soft:  #FBEAE8;
+    --ok:        #3E7D5A;
+    --shadow:    0 1px 2px rgba(20,24,27,.06), 0 4px 12px rgba(20,24,27,.05);
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+    --sans: Inter, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0F1214;
+      --surface:   #171B1E;
+      --surface-2: #1F2529;
+      --ink:       #E8EDF0;
+      --ink-2:     #A9B7BF;
+      --ink-3:     #74858E;
+      --rule:      #2C353A;
+      --axi:       #63B4D4;
+      --axi-soft:  #14262E;
+      --spi:       #D99A4E;
+      --spi-soft:  #2A2113;
+      --hot:       #D9695B;
+      --hot-soft:  #2E1917;
+      --ok:        #6FB98C;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #0F1214;
+    --surface:   #171B1E;
+    --surface-2: #1F2529;
+    --ink:       #E8EDF0;
+    --ink-2:     #A9B7BF;
+    --ink-3:     #74858E;
+    --rule:      #2C353A;
+    --axi:       #63B4D4;
+    --axi-soft:  #14262E;
+    --spi:       #D99A4E;
+    --spi-soft:  #2A2113;
+    --hot:       #D9695B;
+    --hot-soft:  #2E1917;
+    --ok:        #6FB98C;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 48px 28px 80px; }
+
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 24px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(26px, 3.6vw, 38px); font-weight: 700; letter-spacing: -.02em;
+    margin: 0 0 10px; text-wrap: balance;
+  }
+  .sub { color: var(--ink-2); max-width: 62ch; margin: 0; font-size: 15px; }
+
+  h2 {
+    font-size: 13px; font-family: var(--mono); font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3);
+    margin: 56px 0 20px; padding-bottom: 8px; border-bottom: 1px solid var(--rule);
+  }
+  h2:first-of-type { margin-top: 0; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center;
+    margin: 0 0 28px; font-size: 12.5px; color: var(--ink-2);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 22px; height: 3px; border-radius: 2px; flex: none; }
+  .box-key {
+    width: 15px; height: 12px; border-radius: 3px; flex: none;
+    border: 1.5px solid var(--ink-3); background: var(--surface-2);
+  }
+  .box-key.todo { border-style: dashed; background: none; }
+
+  .figure {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 8px; box-shadow: var(--shadow); overflow-x: auto;
+  }
+  .figure svg { display: block; min-width: 820px; width: 100%; height: auto; }
+
+  text { font-family: var(--mono); fill: var(--ink); }
+  .t-mod   { font-size: 13.5px; font-weight: 700; }
+  .t-sig   { font-size: 10.5px; fill: var(--ink-2); }
+  .t-note  { font-size: 10px; fill: var(--ink-3); }
+  .t-badge { font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+  .t-w     { font-size: 10px; font-weight: 700; }
+
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 16px 18px;
+  }
+  .card h3 {
+    margin: 0 0 8px; font-size: 13px; font-family: var(--mono);
+    font-weight: 700; letter-spacing: .04em;
+  }
+  .card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .card code {
+    font-family: var(--mono); font-size: 12.5px;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--ink);
+  }
+  .card.hot   { border-left: 3px solid var(--hot); }
+  .card.axi   { border-left: 3px solid var(--axi); }
+  .card.spi   { border-left: 3px solid var(--spi); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  th {
+    text-align: left; font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+    padding: 11px 16px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--rule); color: var(--ink-2); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code, th code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pill {
+    display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: .06em; padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+  }
+  .pill.done { background: var(--axi-soft); color: var(--ok); }
+  .pill.wip  { background: var(--spi-soft); color: var(--spi); }
+  .pill.todo { background: var(--surface-2); color: var(--ink-3); }
+
+  .note {
+    margin-top: 20px; padding: 14px 18px; border-radius: 8px;
+    background: var(--hot-soft); border: 1px solid var(--rule);
+    border-left: 3px solid var(--hot); font-size: 13.5px; color: var(--ink-2);
+  }
+  .note strong { color: var(--ink); }
+  .note code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+
+  footer {
+    margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule);
+    font-size: 12px; color: var(--ink-3); font-family: var(--mono);
+  }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">matmul_axi · VCU118 / XCVU9P</p>
+  <h1>xSPI 加速器架構</h1>
+  <p class="sub">STM32 透過 xSPI 存取 FPGA 上的 BF16 矩陣加速器。這張圖是 2026-08-31 的實際狀態 —— 實線是已經存在的 RTL，虛線是還沒建的部分。</p>
+</header>
+
+<div class="legend">
+  <span><i class="swatch" style="background:var(--spi)"></i>xSPI 實體訊號</span>
+  <span><i class="swatch" style="background:var(--axi)"></i>AXI4</span>
+  <span><i class="swatch" style="background:var(--hot)"></i>DDR4 競爭路徑</span>
+  <span><i class="box-key"></i>已有 RTL</span>
+  <span><i class="box-key todo"></i>尚未建立</span>
+</div>
+
+<div class="figure">
+<svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="xSPI 橋接器與矩陣加速器的 FPGA 架構圖">
+  <defs>
+    <marker id="a-axi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="var(--axi)"/>
+    </marker>
+    <marker id="a-spi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="var(--spi)"/>
+    </marker>
+    <marker id="a-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="var(--hot)"/>
+    </marker>
+    <marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="var(--ink-3)"/>
+    </marker>
+  </defs>
+
+  <!-- FPGA 邊界 -->
+  <rect x="176" y="14" width="812" height="442" rx="10"
+        fill="none" stroke="var(--rule)" stroke-width="1.5"/>
+  <text x="196" y="36" class="t-note" style="letter-spacing:.1em">FPGA · XCVU9P</text>
+
+  <!-- ══ STM32 ══ -->
+  <rect x="14" y="150" width="126" height="86" rx="8"
+        fill="var(--spi-soft)" stroke="var(--spi)" stroke-width="1.5"/>
+  <text x="77" y="182" class="t-mod" text-anchor="middle" style="fill:var(--spi)">STM32</text>
+  <text x="77" y="200" class="t-sig" text-anchor="middle">llama2.c 主機</text>
+  <text x="77" y="216" class="t-note" text-anchor="middle">OCTOSPI master</text>
+
+  <!-- STM32 → xspi_slave -->
+  <line x1="140" y1="193" x2="228" y2="193" stroke="var(--spi)" stroke-width="2" marker-end="url(#a-spi)"/>
+  <text x="184" y="184" class="t-sig" text-anchor="middle" style="fill:var(--spi)">50 MHz</text>
+  <text x="184" y="212" class="t-note" text-anchor="middle">io[7:0] DDR</text>
+  <text x="184" y="225" class="t-note" text-anchor="middle">cs_n · dqs</text>
+
+  <!-- ══ xspi_slave ══ -->
+  <rect x="230" y="126" width="168" height="134" rx="8"
+        fill="var(--surface-2)" stroke="var(--spi)" stroke-width="2"/>
+  <text x="314" y="152" class="t-mod" text-anchor="middle">xspi_slave</text>
+  <text x="314" y="169" class="t-note" text-anchor="middle">769 行 · 兩個時脈域</text>
+  <line x1="248" y1="180" x2="380" y2="180" stroke="var(--rule)" stroke-width="1"/>
+  <text x="248" y="197" class="t-sig">訊框解析 · MR 暫存器</text>
+  <text x="248" y="213" class="t-sig">async_fifo × 3 (CDC)</text>
+  <text x="248" y="229" class="t-sig">AXI 讀寫引擎 × 2</text>
+  <rect x="248" y="238" width="72" height="15" rx="7" fill="var(--spi-soft)"/>
+  <text x="284" y="249" class="t-badge" text-anchor="middle" style="fill:var(--spi)">DEBUG 中</text>
+
+  <!-- xspi_slave → 暫存器路徑（上） -->
+  <path d="M398 158 L470 158 L470 78 L610 78" fill="none"
+        stroke="var(--axi)" stroke-width="2" marker-end="url(#a-axi)"/>
+  <text x="500" y="70" class="t-sig" style="fill:var(--axi)">m_reg_*</text>
+  <text x="500" y="94" class="t-note">32-bit · 直連不用仲裁</text>
+
+  <!-- xspi_slave → DDR 路徑（下，經 width converter） -->
+  <path d="M398 228 L436 228" fill="none" stroke="var(--hot)" stroke-width="2" marker-end="url(#a-hot)"/>
+  <text x="417" y="220" class="t-w" text-anchor="middle" style="fill:var(--hot)">32b</text>
+
+  <!-- Width Converter（未建） -->
+  <rect x="438" y="196" width="118" height="64" rx="8"
+        fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="497" y="222" class="t-mod" text-anchor="middle" style="font-size:11.5px; fill:var(--ink-2)">Width Conv</text>
+  <text x="497" y="238" class="t-note" text-anchor="middle">Xilinx IP</text>
+  <text x="497" y="251" class="t-note" text-anchor="middle">32 → 512</text>
+
+  <path d="M556 228 L604 228" fill="none" stroke="var(--hot)" stroke-width="2" marker-end="url(#a-hot)"/>
+  <text x="580" y="220" class="t-w" text-anchor="middle" style="fill:var(--hot)">512b</text>
+
+  <!-- ══ matmul_top ══ -->
+  <rect x="612" y="42" width="184" height="120" rx="8"
+        fill="var(--surface-2)" stroke="var(--axi)" stroke-width="2"/>
+  <text x="704" y="68" class="t-mod" text-anchor="middle">matmul_top</text>
+  <text x="704" y="85" class="t-note" text-anchor="middle">BF16 288×288 加速器</text>
+  <line x1="630" y1="96" x2="778" y2="96" stroke="var(--rule)" stroke-width="1"/>
+  <text x="630" y="113" class="t-sig">s_axi_* ← 參數 / start</text>
+  <text x="630" y="129" class="t-sig">m_axi_* → 讀權重</text>
+  <rect x="630" y="138" width="66" height="15" rx="7" fill="var(--axi-soft)"/>
+  <text x="663" y="149" class="t-badge" text-anchor="middle" style="fill:var(--ok)">GATE 綠</text>
+
+  <!-- matmul_top m_axi → 仲裁點 -->
+  <path d="M796 122 L836 122 L836 214 L806 214 L806 228 L790 228" fill="none"
+        stroke="var(--hot)" stroke-width="2" marker-end="url(#a-hot)"/>
+  <text x="856" y="170" class="t-w" text-anchor="middle" style="fill:var(--hot)">512b</text>
+  <text x="856" y="185" class="t-note" text-anchor="middle">m_axi_*</text>
+
+  <!-- Interconnect（未建） -->
+  <rect x="606" y="196" width="184" height="64" rx="8"
+        fill="none" stroke="var(--hot)" stroke-width="1.8" stroke-dasharray="5 4"/>
+  <text x="698" y="220" class="t-mod" text-anchor="middle" style="font-size:11.5px; fill:var(--hot)">AXI Interconnect</text>
+  <text x="698" y="236" class="t-note" text-anchor="middle">Xilinx IP · 2 master → 1 slave</text>
+  <text x="698" y="250" class="t-note" text-anchor="middle" style="fill:var(--hot)">加速器優先</text>
+
+  <!-- Interconnect → MIG -->
+  <path d="M698 260 L698 300" fill="none" stroke="var(--hot)" stroke-width="2" marker-end="url(#a-hot)"/>
+
+  <!-- MIG / DDR4（未建） -->
+  <rect x="606" y="302" width="184" height="62" rx="8"
+        fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="698" y="326" class="t-mod" text-anchor="middle" style="font-size:11.5px; fill:var(--ink-2)">MIG DDR4</text>
+  <text x="698" y="343" class="t-note" text-anchor="middle">板載 dual 80-bit</text>
+  <text x="698" y="356" class="t-note" text-anchor="middle">目前是行為模型</text>
+
+  <!-- activation 直通（預留） -->
+  <path d="M314 260 L314 400 L612 400" fill="none"
+        stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#a-ink)"/>
+  <text x="420" y="392" class="t-note">activation 直通 · X_FROM_XSPI=0（預留未接）</text>
+
+  <!-- 時脈域分隔 -->
+  <line x1="414" y1="30" x2="414" y2="440" stroke="var(--rule)" stroke-width="1" stroke-dasharray="2 5"/>
+  <text x="330" y="434" class="t-note" text-anchor="middle" style="fill:var(--spi)">xspi_clk · 50 MHz</text>
+  <text x="530" y="434" class="t-note" text-anchor="middle" style="fill:var(--axi)">aclk · 100 MHz</text>
+</svg>
+</div>
+
+<div class="note">
+  <strong>圖上唯一的競爭點</strong>是 DDR4 那條紅線 —— <code>xspi_slave.m_ddr_*</code>（灌權重）和
+  <code>matmul_top.m_axi_*</code>（讀權重）都要打同一顆記憶體，而且位寬差 16 倍。
+  仲裁和寬度轉換都交給 Xilinx IP，兩個自己寫的模組維持標準 AXI4 介面不動。
+</div>
+
+<h2>三條資料路徑</h2>
+<div class="grid">
+  <div class="card axi">
+    <h3>設定 / 啟動</h3>
+    <p><code>m_reg_*</code> → <code>s_axi_*</code>。STM32 寫 <code>0x9000_0000</code> 區段設參數、按 start、讀 STATUS。32-bit 直連，只有一個 master，不需要仲裁。</p>
+  </div>
+  <div class="card hot">
+    <h3>權重進出 DDR4</h3>
+    <p><code>m_ddr_*</code> 經 width converter 進 interconnect。這條跟加速器讀權重共用 DDR4，是唯一需要仲裁的路口。</p>
+  </div>
+  <div class="card spi">
+    <h3>Activation 直通</h3>
+    <p><code>matmul_top</code> 已預留 <code>xspi_x_valid/data/full</code>，但 <code>xspi_slave</code> 沒有對應輸出埠。<code>X_FROM_XSPI=0</code>，這條還沒接。</p>
+  </div>
+</div>
+
+<h2>目前狀態</h2>
+<div class="tbl-wrap">
+<table>
+  <thead>
+    <tr><th>區塊</th><th>來源</th><th>介面寬度</th><th>驗證</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>matmul_top</code></td><td>自己寫</td><td class="num">512-bit</td>
+      <td><span class="pill done">gate 綠</span></td>
+    </tr>
+    <tr>
+      <td><code>xspi_slave</code></td><td>自己寫</td><td class="num">32-bit</td>
+      <td><span class="pill wip">12 cover 全中 · 資料 26/26 錯</span></td>
+    </tr>
+    <tr>
+      <td>Width Converter</td><td>Xilinx IP</td><td class="num">32 → 512</td>
+      <td><span class="pill todo">未建</span></td>
+    </tr>
+    <tr>
+      <td>AXI Interconnect</td><td>Xilinx IP</td><td class="num">512-bit</td>
+      <td><span class="pill todo">未建</span></td>
+    </tr>
+    <tr>
+      <td>MIG DDR4</td><td>Xilinx IP</td><td class="num">512-bit</td>
+      <td><span class="pill todo">行為模型</span></td>
+    </tr>
+    <tr>
+      <td>系統頂層</td><td>Vivado block design</td><td class="num">—</td>
+      <td><span class="pill todo">未建</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>驗證分層</h2>
+<div class="grid">
+  <div class="card">
+    <h3>模組層</h3>
+    <p>iverilog + <code>simcheck.py</code>。每改一次 RTL 跑一次，零點幾秒。<strong>Xilinx IP 絕對不進這一層</strong> —— 那是加密 SystemVerilog，只能用 xsim，會讓迭代從零點幾秒變成幾十秒。</p>
+  </div>
+  <div class="card">
+    <h3>整合層</h3>
+    <p>Vivado block design + xsim。模組都通過之後才做一次，慢一點無所謂。驗的是「接起來對不對」，不是「模組自己對不對」。</p>
+  </div>
+  <div class="card">
+    <h3>上板</h3>
+    <p>ILA / UART 量真實時序和加速比。這是「雛形完成」的定義 —— 不是 gate 全綠，是真的比 STM32 CPU 快。</p>
+  </div>
+</div>
+
+<footer>2026-08-31 · 依 rtl/ 實際 port 宣告與 ARCHITECTURE.md 繪製</footer>
+
+</div>

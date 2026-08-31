@@ -19,6 +19,40 @@ AXI 匯流排要能跟 VCU118 的 MIG DDR4 介面互通。
 | `f32_mul.v` / `f32_add.v` | bit-exact vs 編譯出來的 C oracle |
 | `matmul_core.v` | **40/40 bit-exact** vs `c_matmul_oracle.c` |
 | `axi4_slave_reg.v` | 32/64/128/256 四種位寬 **全部 0 FAIL** |
+| `axi4_master.v` | data_integrity 5581/0 · 6 個 cover 全中 |
+| `matmul_top.v` | **288/288 bit-exact** vs C oracle |
+| `matmul_top_cdc.v` | 288/288 bit-exact（跨時脈域版）|
+| `xspi_slave.v` | ⚠ **還沒通過** —— 見下方 |
+
+### xspi_slave 的真實狀態（2026-08-31 21:50）
+
+完整 gate 十一個 run 只有這一個 FAIL：
+
+```
+check 'data_integrity': 26 of 26 mismatched
+the test itself reported SIMEND fail
+fatal marker in log: 'timeout'
+```
+
+| 面向 | 狀態 |
+|---|---|
+| RTL + tb 編譯 | ✅ 0 error 0 warning |
+| 12 個 require_cover | ✅ **全部 fire** |
+| 資料正確性 | ❌ **26/26 全錯**（讀回來是 x）|
+
+**這正是「cover 全綠不等於功能對」的實例。** 如果 tb 只檢查 cover
+不檢查資料，這會是一個假的通過。它自己的 tb 有 `data_integrity` 檢查，
+抓到了 26 個 mismatch，也誠實回報了。
+
+## 架構圖
+
+`docs/fpga-architecture.html` —— 依 `rtl/` 實際 port 宣告與
+`ARCHITECTURE.md` 繪製，標示已有 RTL 與尚未建立的 Xilinx IP。
+
+系統整合的決定：**interconnect 和 width converter 用 Xilinx 內建 IP**，
+不自己寫（焦點放在 xSPI bridge 和加速器，那兩個才是自己的 IP）。
+Xilinx IP 是加密 SystemVerilog、只能用 xsim，所以**絕不進模組層的
+iverilog gate** —— 那會讓每次迭代從零點幾秒變成幾十秒。
 
 ## 它自己做的關鍵決定
 
