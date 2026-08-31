@@ -674,10 +674,14 @@ module xspi_slave #(
                 // consume returned beats (from whichever master is active)
                 if (rd_target_reg && reg_rd_valid && reg_rd_ready) begin
                     rd_beat_cnt <= rd_beat_cnt + 16'd1;
-                    if (rd_beat_cnt == rd_total_beats - 16'd1) rd_state <= RD_IDLE;
+                    // stay ACTIVE until the push phase drains (one extra cycle
+                    // to push the high halfword of the last beat)
+                    if ((rd_beat_cnt == rd_total_beats - 16'd1) && !rd_push_phase)
+                        rd_state <= RD_IDLE;
                 end else if (!rd_target_reg && ddr_rd_valid && ddr_rd_ready) begin
                     rd_beat_cnt <= rd_beat_cnt + 16'd1;
-                    if (rd_beat_cnt == rd_total_beats - 16'd1) rd_state <= RD_IDLE;
+                    if ((rd_beat_cnt == rd_total_beats - 16'd1) && !rd_push_phase)
+                        rd_state <= RD_IDLE;
                 end
             end
         end
@@ -716,7 +720,9 @@ module xspi_slave #(
 
     assign rd_wr_en   = (rd_state == RD_ACTIVE) && !rd_wr_full &&
                         (rd_beat_consumed || rd_push_phase);
-    assign rd_wr_data = rd_push_phase ? rd_beat_hold[31:16] : rd_beat_hold[15:0];
+    // On the consume cycle push the live low halfword; on the following cycle
+    // push the latched high halfword.
+    assign rd_wr_data = rd_push_phase ? rd_beat_hold[31:16] : rd_mux_data[15:0];
 
     // ================= WRITE engine (aclk) =================
     // On a write control word: drain f_len_hw halfwords from the write FIFO,
@@ -741,8 +747,8 @@ module xspi_slave #(
     wire [15:0] wr_len_bytes   = wr_total_beats * BEAT_BYTES;
 
     // write length in bytes, driven combinationally for the wr_start cycle.
-    assign reg_wr_len  = wr_target_reg  ? {RD_LEN_W-16{1'b0}, wr_len_bytes} : {RD_LEN_W{1'b0}};
-    assign ddr_wr_len  = !wr_target_reg ? {RD_LEN_W-16{1'b0}, wr_len_bytes} : {RD_LEN_W{1'b0}};
+    assign reg_wr_len  = wr_target_reg  ? {4'd0, wr_len_bytes} : {RD_LEN_W{1'b0}};
+    assign ddr_wr_len  = !wr_target_reg ? {4'd0, wr_len_bytes} : {RD_LEN_W{1'b0}};
 
     // the master accepts the presented beat this cycle
     wire wr_accept = wr_beat_valid &&
