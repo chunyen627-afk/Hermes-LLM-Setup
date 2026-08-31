@@ -265,11 +265,11 @@ module tb_xspi_slave;
                         dut.u_ddr_master.m_axi_awvalid || dut.u_ddr_master.m_axi_wvalid ||
                         dut.u_ddr_master.m_axi_bvalid ||
                         dut.u_reg_master.m_axi_arvalid || dut.u_reg_master.m_axi_rvalid) begin
-                        $display("DBG t=%0t f_valid=%b f_is_read=%b f_is_reg=%b f_len_hw=%0d f_addr=%h | rd_state=%b rd_tgt_reg=%b rd_beat_cnt=%0d rd_total=%0d | ctl_rd_empty=%b ctl_rd_en=%b wr_state=%d w_rd_empty=%b wr_beat_cnt=%0d wr_total=%0d wr_tgt_reg=%b | reg_arv=%b reg_rv=%b reg_rrdy=%b ddr_awv=%b ddr_wv=%b ddr_bv=%b ddr_arv=%b ddr_rv=%b",
+                        $display("DBG t=%0t f_valid=%b f_is_read=%b f_is_reg=%b f_len_hw=%0d f_addr=%h | rd_state=%b rd_tgt_reg=%b rd_beat_cnt=%0d rd_total=%0d | ctl_rd_empty=%b ctl_rd_en=%b wr_state=%d w_rd_empty=%b wr_hw_left=%0d wr_hwpb=%0d wr_bv=%b wr_tgt_reg=%b | reg_arv=%b reg_rv=%b reg_rrdy=%b ddr_awv=%b ddr_wv=%b ddr_bv=%b ddr_arv=%b ddr_rv=%b",
                             $time, dut.f_valid, dut.f_is_read, dut.f_is_reg, dut.f_len_hw, dut.f_addr,
                             dut.rd_state, dut.rd_target_reg, dut.rd_beat_cnt, dut.rd_total_beats,
                             dut.ctl_rd_empty, dut.ctl_rd_en, dut.wr_state, dut.w_rd_empty,
-                            dut.wr_beat_cnt, dut.wr_total_beats, dut.wr_target_reg,
+                            dut.wr_hw_left, dut.wr_hwpb, dut.wr_beat_valid, dut.wr_target_reg,
                             dut.u_reg_master.m_axi_arvalid,
                             dut.u_reg_master.m_axi_rvalid, m_reg_rready,
                             dut.u_ddr_master.m_axi_awvalid, dut.u_ddr_master.m_axi_wvalid,
