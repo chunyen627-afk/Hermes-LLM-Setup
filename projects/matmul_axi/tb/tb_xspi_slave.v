@@ -194,7 +194,12 @@ module tb_xspi_slave;
 
             drive_dummy(n_dummy);
 
-            // Data phase (one halfword per DDR cycle).
+            // Data phase (DDR: one halfword per SCK cycle, 16 bits/cycle).
+            // The DUT samples the upper byte on the rising edge and the lower
+            // byte on the falling edge of the SAME SCK cycle. So per halfword:
+            //   negedge: drive upper (stable through the next rising edge)
+            //   posedge: drive lower  (DUT just sampled upper; lower now stable
+            //             through the next falling edge, where it is sampled)
             for (i = 0; i < n_hw; i = i + 1) begin
                 if (is_read) begin
                     @(posedge xspi_clk); #1; hw[15:8] = xspi_io;   // upper (rising)
@@ -203,7 +208,7 @@ module tb_xspi_slave;
                 end else begin
                     hw = data[base+i];
                     @(negedge xspi_clk); #1; xspi_io_master = hw[15:8];   // upper
-                    @(negedge xspi_clk); #1; xspi_io_master = hw[7:0];    // lower
+                    @(posedge xspi_clk); #1; xspi_io_master = hw[7:0];    // lower
                 end
             end
 
