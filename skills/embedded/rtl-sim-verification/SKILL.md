@@ -236,6 +236,28 @@ wire [5:0] nsh = -t;  x[nsh]     // ✓ 先存進 wire 再選
 ```
 **寬度必須是常數，起點可以是變數** —— 用 `+:` / `-:` 語法。
 
+⚠ **這個坑會用很多種面貌出現，看到這兩句錯誤訊息就往這裡想**：
+
+```verilog
+// 2026-08-31 實際踩到的三種變形，全是同一個原因
+wr_beat[(cnt*8+15) : (cnt*8)] <= d;              // ✗ 兩個邊界都是變數運算
+{(sel ? a : b)[15:8], 8'h00}                     // ✗ 對三元運算式做 part-select
+xspi_io = 32'h9001_0200[31:24];                  // ✗ 對「字面常數」做 part-select
+```
+
+三個解法（挑最合適的）：
+
+```verilog
+wr_beat[cnt*8 +: 16] <= d;                       // ✓ indexed part-select
+wire [31:0] mux = sel ? a : b;  mux[15:8]        // ✓ 先落進 wire 再選
+xspi_io = 8'h90;   // addr[31:24]                // ✓ 常數就直接拆開寫
+```
+
+**當天的教訓**：第一次遇到時繞了七輪 —— 每次只換變數名，
+語法從沒動過，因為改完沒去看編譯器實際講什麼。
+`must be constant` 就是在說「你放了變數」，訊息已經把原因講完了。
+**改完一定要跑編譯器並讀輸出**，不要憑印象改。
+
 **`No function named 'foo' found in this context`**
 Verilog-2001 的 `function` 是**模組區域的**。在 module A 裡宣告，
 module B（包括 testbench）看不到。要共用就 `include` 同一個檔，
