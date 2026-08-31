@@ -319,7 +319,9 @@ module xspi_slave #(
                     // low through the whole frame.)
                     addr_reg  <= {addr_b3, addr_b2, addr_b1, addr_b0};
                     dummy_cnt <= dummy_n;
-                    phase     <= (dummy_cnt != 8'd0) ? P_DUMMY : P_DATA;
+                    // Use dummy_n (the just-decoded value) for the phase decision,
+                    // NOT dummy_cnt (which is still the old value due to non-blocking).
+                    phase     <= (dummy_n != 8'd0) ? P_DUMMY : P_DATA;
                 end
 
                 P_DUMMY: begin
