@@ -150,6 +150,7 @@ module xspi_slave #(
     wire                 rd_rd_empty;    // read-FIFO empty (xspi side)
     wire [RD_FIFO_W-1:0] rd_wr_data;     // halfword pushed into the read FIFO
     wire                 rd_wr_en;
+    wire                 rd_rd_en;       // pop the read FIFO (xspi side)
 
     // control FIFO
     reg                  ctl_push;
@@ -615,31 +616,11 @@ module xspi_slave #(
         .m_axi_rlast(m_ddr_rlast), .m_axi_rid(m_ddr_rid)
     );
 
-    // ---- master command/data wires (driven by the engines below) ----
-    reg                     reg_rd_start, ddr_rd_start;
-    reg [AXI_ADDR_WIDTH-1:0] reg_rd_addr, ddr_rd_addr;
-    reg                     reg_wr_start, ddr_wr_start;
-    reg [AXI_ADDR_WIDTH-1:0] reg_wr_addr, ddr_wr_addr;
-    // read-channel outputs from the masters
-    wire                    reg_rd_busy, ddr_rd_busy;
-    wire                    reg_rd_valid, ddr_rd_valid;
-    wire [AXI_DATA_WIDTH-1:0] reg_rd_data, ddr_rd_data;
-    wire                    reg_rd_last, ddr_rd_last;
-    // read-channel ready (driven combinationally by the read engine)
-    wire                    reg_rd_ready, ddr_rd_ready;
-    // write-channel signals
-    wire                    reg_wr_busy, ddr_wr_busy;
-    wire                    reg_wr_done, ddr_wr_done;
-    wire                    reg_wr_dr, ddr_wr_dr;        // wr_data_in_ready (from master)
-    wire [AXI_DATA_WIDTH-1:0] reg_wr_data, ddr_wr_data;  // wr_data_in (to master)
-    wire                    reg_wr_dv, ddr_wr_dv;        // wr_data_in_valid (to master)
-
     // ================= READ engine (aclk) =================
     // On a read control word: issue rd_start on the right master with
     // len = ceil(f_len_hw*2 / beat) beats. Consume returned beats and push
     // their halfwords into the read FIFO in xSPI DDR order: for each 32-bit
     // beat [A+3 A+2 A+1 A+0] push {A+1,A+0} then {A+3,A+2}.
-    localparam RD_IDLE = 1'd0, RD_ACTIVE = 1'd1;
     reg        rd_state;
     reg        rd_target_reg;            // this read targets the reg master
     reg [15:0] rd_hw_left;               // halfwords still to push into rd FIFO
@@ -743,9 +724,6 @@ module xspi_slave #(
     // correct master. wr_start is issued once at the start of draining with the
     // full byte length; each assembled beat is presented to the master's
     // write-data input and held until accepted (wr_data_in_ready).
-    localparam WR_IDLE = 2'd0, WR_DRAIN = 2'd1, WR_WAIT = 2'd2;
-    localparam HW_PER_BEAT = BEAT_BYTES / 2;   // halfwords per AXI beat
-    reg [1:0]  wr_state;
     reg        wr_target_reg;
     reg [15:0] wr_hw_left;               // halfwords still to drain from w FIFO
     reg [3:0]  wr_hwpb;                  // halfwords packed into the current beat
@@ -811,6 +789,8 @@ module xspi_slave #(
                         wr_beat    <= w_fifo_hw;          // first hw of new beat
                         wr_hwpb    <= 4'd1;
                         wr_hw_left <= wr_hw_left - 16'd1;
+                    end else begin
+                        wr_hwpb    <= 4'd0;               // nothing left to pack
                     end
                 end else if (!wr_beat_valid && !w_rd_empty) begin
                     // pack the next halfword into its slot (variable shift-OR,
@@ -823,10 +803,13 @@ module xspi_slave #(
                 end
                 // flush a final partial beat (only possible for unaligned sizes)
                 if ((wr_hw_left == 16'd0) && w_rd_empty && !wr_beat_valid &&
-                    wr_hwpb != 4'd0)
+                    wr_hwpb != 4'd0) begin
                     wr_beat_valid <= 1'b1;
+                    wr_hwpb       <= 4'd0;   // consumed; don't re-flush
+                end
                 // everything drained and no beat pending -> wait for completion
-                if ((wr_hw_left == 16'd0) && w_rd_empty && !wr_beat_valid)
+                if ((wr_hw_left == 16'd0) && w_rd_empty && !wr_beat_valid &&
+                    wr_hwpb == 4'd0)
                     wr_state <= WR_WAIT;
             end
 
