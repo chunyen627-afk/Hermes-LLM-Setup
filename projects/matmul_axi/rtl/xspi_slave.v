@@ -148,14 +148,15 @@ module xspi_slave #(
 
     localparam P_IDLE   = 3'd0;
     localparam P_CMD    = 3'd1;   // capture instruction on next rising edge
-    localparam P_ADDR   = 3'd2;   // 2 cycles, DDR -> 32 bits
+    localparam P_ADDR   = 3'd2;   // 4 cycles, DDR -> 32 bits (one byte per rising edge)
+    localparam P_ADDR_D = 3'd5;   // assemble the full address word (all bytes settled)
     localparam P_DUMMY  = 3'd3;   // count dummy cycles
     localparam P_DATA   = 3'd4;   // read/write data, DDR
 
     reg [2:0]  phase;
     reg [7:0]  cmd_reg;
     reg [31:0] addr_reg;
-    reg [1:0]  addr_cnt;          // 0..1 address cycles (DDR x8 -> 2 cycles)
+    reg [1:0]  addr_cnt;          // 0..3 address bytes (one per rising edge)
     reg [7:0]  dummy_cnt;
     reg [7:0]  dummy_n;           // dummy count for the current frame
     reg        is_read;           // current frame is a read (slave drives IO)
@@ -195,6 +196,10 @@ module xspi_slave #(
             phase     <= P_IDLE;
             cmd_reg   <= 8'h00;
             addr_reg  <= 32'h0;
+            addr_b3   <= 8'h00;
+            addr_b2   <= 8'h00;
+            addr_b1   <= 8'h00;
+            addr_b0   <= 8'h00;
             addr_cnt  <= 2'd0;
             dummy_cnt <= 8'd0;
             dummy_n   <= 8'd0;
@@ -241,17 +246,24 @@ module xspi_slave #(
                     if (cs_rise) begin
                         phase <= P_IDLE;
                     end else begin
-                        if (addr_cnt == 2'd0)
-                            addr_b3 <= xspi_io[7:0];   // MSB byte
-                        else
-                            addr_b1 <= xspi_io[7:0];
-                        if (addr_cnt == 2'd1) begin
-                            addr_reg  <= {addr_b3, addr_b2, addr_b1, addr_b0};
-                            dummy_cnt <= dummy_n;
-                            phase     <= (dummy_cnt != 8'd0) ? P_DUMMY : P_DATA;
-                        end else begin
+                        // Capture all four DDR address bytes on rising edges,
+                        // MSB first (the master drives each byte one falling
+                        // edge before its sampling rising edge). Assemble the
+                        // full word one cycle after the last byte is latched so
+                        // every byte is valid when it is read.
+                        case (addr_cnt)
+                            2'd0: addr_b3 <= xspi_io[7:0];
+                            2'd1: addr_b2 <= xspi_io[7:0];
+                            2'd2: addr_b1 <= xspi_io[7:0];
+                            default: begin
+                                addr_b0   <= xspi_io[7:0];
+                                addr_reg  <= {addr_b3, addr_b2, addr_b1, addr_b0};
+                                dummy_cnt <= dummy_n;
+                                phase     <= (dummy_cnt != 8'd0) ? P_DUMMY : P_DATA;
+                            end
+                        endcase
+                        if (addr_cnt != 2'd3)
                             addr_cnt <= addr_cnt + 2'd1;
-                        end
                     end
                 end
 
@@ -300,20 +312,12 @@ module xspi_slave #(
         end
     end
 
-    // ---- falling-edge handling (DDR address + data capture) ----
+    // ---- falling-edge handling (DDR data capture) ----
     always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
-            addr_b2 <= 8'h00;
-            addr_b0 <= 8'h00;
             w_lo    <= 8'h00;
         end else begin
             case (phase)
-                P_ADDR: begin
-                    if (addr_cnt == 2'd0)
-                        addr_b2 <= xspi_io[7:0];   // byte2
-                    else
-                        addr_b0 <= xspi_io[7:0];   // byte0 (LSB)
-                end
                 P_DATA: begin
                     if (!is_read)
                         w_lo <= xspi_io[7:0];      // lower byte of write data
@@ -467,7 +471,7 @@ module xspi_slave #(
     reg  ctl_push;
     always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n)      ctl_push <= 1'b0;
-        else              ctl_push <= ((phase == P_ADDR) && (addr_cnt == 2'd1) && is_read) ||
+        else              ctl_push <= ((phase == P_ADDR) && (addr_cnt == 2'd3) && is_read) ||
                                       (cs_rise && (phase == P_DATA) && !is_read);
     end
 

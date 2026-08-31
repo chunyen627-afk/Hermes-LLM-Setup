@@ -427,7 +427,7 @@ module tb_matmul_top_e2e #(
         fork
             begin : wd
                 integer wc;
-                for (wc = 0; wc < 400000; wc = wc + 1) @(posedge clk);
+                for (wc = 0; wc < 1000000; wc = wc + 1) @(posedge clk);
                 $display("WATCHDOG: stalled. lstate=%d rd_busy=%b wr_busy=%b core_done=%b",
                          dut.lstate, dut.rd_busy, dut.wr_busy, dut.core_done);
                 $finish;
@@ -450,11 +450,14 @@ module tb_matmul_top_e2e #(
                     if (rv !== D) begin $display("ERROR: D readback %0d != %0d", rv, D); errors=errors+1; end
                 end
 
-                // start the job
-                reg_write(32'h00, 32'd1);          // CTRL.start = 1
+                // start the job. bit0=start, bit2=bf16_in (this core is BF16-only,
+                // so bf16_in must be 1 or the job is rejected with STATUS.error).
+                reg_write(32'h00, 32'd5);          // CTRL.start | CTRL.bf16_in = 1
 
                 // wait for done (STATUS bit0). The core alone takes D*N cycles and
-                // the W-load unpacks one element/cycle, so allow a generous bound.
+                // the W-load unpacks one element/cycle; under the memory model's
+                // backpressure/refresh stalls the wall-clock time is several times
+                // the raw cycle count, so allow a generous bound.
                 begin : waitdone
                     reg [31:0] st;
                     integer timeout;
@@ -464,7 +467,7 @@ module tb_matmul_top_e2e #(
                         cov_status_polls = cov_status_polls + 1;
                         if (st[0]) disable waitdone;
                         timeout = timeout + 1;
-                        if (timeout > 60000) begin $display("ERROR: did not finish in time (lstate=%d)", dut.lstate); errors=errors+1; disable waitdone; end
+                        if (timeout > 400000) begin $display("ERROR: did not finish in time (lstate=%d)", dut.lstate); errors=errors+1; disable waitdone; end
                     end while (1);
                 end
                 // sanity: verify a few W/x elements landed in the core correctly
@@ -494,6 +497,38 @@ module tb_matmul_top_e2e #(
                     end
                 end
 
+                // ---- new register-map fields: COUNT, STATUS.error, CTRL.reset ----
+                begin : regfields
+                    reg [31:0] st, cnt;
+                    integer rw;
+
+                    // COUNT (0x1C) should equal D after the job completed.
+                    reg_read(32'h1C, cnt);
+                    if (cnt !== D) begin $display("ERROR: COUNT=%0d != D=%0d", cnt, D); errors=errors+1; end
+                    else            $display("COVER count_register %0d", D);
+
+                    // Error path: start a job with bf16_in=0 (unsupported format).
+                    // The job must NOT run and STATUS.error (bit2) must latch.
+                    reg_write(32'h00, 32'd1);          // start=1, bf16_in=0
+                    for (rw = 0; rw < 8; rw = rw + 1) @(posedge clk);
+                    reg_read(32'h04, st);
+                    if (!st[2]) begin $display("ERROR: STATUS.error not set on bf16_in=0 start (st=%h)", st); errors=errors+1; end
+                    else            $display("COVER error_latch %0d", 1);
+
+                    // Soft reset (CTRL.reset, bit1): clears status and COUNT.
+                    reg_write(32'h00, 32'd2);          // reset=1
+                    for (rw = 0; rw < 8; rw = rw + 1) @(posedge clk);
+                    reg_read(32'h04, st);
+                    reg_read(32'h1C, cnt);
+                    if (st !== 0)    begin $display("ERROR: STATUS=%h not cleared by soft reset", st); errors=errors+1; end
+                    if (cnt !== 0)   begin $display("ERROR: COUNT=%0d not cleared by soft reset", cnt); errors=errors+1; end
+                    if (st === 0 && cnt === 0) $display("COVER soft_reset %0d", 1);
+
+                    // CTRL.reset must auto-clear (not hold the design in reset).
+                    reg_read(32'h00, st);
+                    if (st[1]) begin $display("ERROR: CTRL.reset not auto-cleared (ctrl=%h)", st); errors=errors+1; end
+                end
+
                 // ---- gate markers ----
                 $display("CHECK end_to_end_match %0d %0d", D, errors);
                 $display("COVER end_to_end_match %0d", (errors == 0) ? D : 0);
@@ -509,7 +544,10 @@ module tb_matmul_top_e2e #(
                     $display("ALL_PASS (e2e matmul_top D=%0d N=%0d: %0d outputs match C oracle)", D, N, D);
                 else
                     $display("HAS_FAILURES (%0d errors)", errors);
-                $display("SIMEND ok");
+                // SIMEND must reflect the real result. The marker protocol
+                // requires the line to be EXACTLY "SIMEND ok" or "SIMEND fail"
+                // (no trailing text).
+                $display("SIMEND %s", (errors == 0) ? "ok" : "fail");
                 $finish;
             end : tests
         join

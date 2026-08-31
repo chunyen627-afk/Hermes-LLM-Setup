@@ -225,6 +225,26 @@ module tb_xspi_slave;
     endtask
 
     // ================= test scenarios =================
+    // ⚠ 使用者的提示（22:10）：「你要不要跑波形檢查，你有眼睛」
+    //
+    // 你現在追的是 timing-alignment 問題（addr_b1 在 rising edge 取樣時
+    // 匯流排還是 X）—— 那正是波形最擅長的：一眼看出訊號什麼時候變、
+    // 時脈邊緣落在哪裡，$display 抓不到邊緣前後的差異。
+    //
+    // 但這個 tb 目前沒有 $dumpfile/$dumpvars，所以產不出 VCD，
+    // 你就算想看也沒東西可看。先加上去：
+    //     initial begin
+    //         $dumpfile("xspi_tb.vcd");
+    //         $dumpvars(0, tb_xspi_slave);
+    //     end
+    // 然後照 skill `embedded/rtl-sim-verification` 的
+    // references/vcd-parsing.md 把 VCD 畫成波形圖，
+    // 用 vision_analyze 問**具體**問題（例如「addr_b1 在第幾個 SCK
+    // 上升緣被取樣？那個時間點 xspi_io 是什麼值？」），
+    // 不要問「這張圖有什麼問題」。
+    //
+    // 你有視覺能力（mmproj 已掛），這是它該派上用場的地方。
+    // 加完波形、問題解決之後，刪掉這段註解。
     initial begin
         xspi_clk = 1'b0; aclk = 1'b0; xspi_cs_n = 1'b1; xspi_dqs = 1'b0; arst_n = 1'b0;
         cov_host_init=0; cov_mm_write=0; cov_mm_read=0; cov_burst_addr=0;
@@ -241,13 +261,18 @@ module tb_xspi_slave;
                 while (dbg_cnt < 4000) begin
                     @(posedge aclk);
                     if (dut.f_valid || dut.ctl_rd_en || dut.wr_state != 2'd0 ||
+                        dut.rd_state != 1'd0 ||
                         dut.u_ddr_master.m_axi_awvalid || dut.u_ddr_master.m_axi_wvalid ||
-                        dut.u_ddr_master.m_axi_bvalid) begin
-                        $display("DBG t=%0t f_valid=%b f_is_read=%b f_is_reg=%b f_len_hw=%0d f_addr=%h | ctl_rd_empty=%b ctl_rd_en=%b wr_state=%d w_rd_empty=%b | ddr_awv=%b ddr_wv=%b ddr_bv=%b ddr_wr_active=%b",
+                        dut.u_ddr_master.m_axi_bvalid ||
+                        dut.u_reg_master.m_axi_arvalid || dut.u_reg_master.m_axi_rvalid) begin
+                        $display("DBG t=%0t f_valid=%b f_is_read=%b f_is_reg=%b f_len_hw=%0d f_addr=%h | rd_state=%b rd_tgt_reg=%b rd_beat_cnt=%0d rd_total=%0d | ctl_rd_empty=%b ctl_rd_en=%b wr_state=%d w_rd_empty=%b | reg_arv=%b reg_arry=%b reg_rv=%b reg_rrdy=%b ddr_arv=%b ddr_arry=%b ddr_rv=%b ddr_rrdy=%b",
                             $time, dut.f_valid, dut.f_is_read, dut.f_is_reg, dut.f_len_hw, dut.f_addr,
+                            dut.rd_state, dut.rd_target_reg, dut.rd_beat_cnt, dut.rd_total_beats,
                             dut.ctl_rd_empty, dut.ctl_rd_en, dut.wr_state, dut.w_rd_empty,
-                            dut.u_ddr_master.m_axi_awvalid, dut.u_ddr_master.m_axi_wvalid,
-                            dut.u_ddr_master.m_axi_bvalid, dut.u_ddr_master.wr_active);
+                            dut.u_reg_master.m_axi_arvalid, m_reg_arready,
+                            dut.u_reg_master.m_axi_rvalid, m_reg_rready,
+                            dut.u_ddr_master.m_axi_arvalid, m_ddr_arready,
+                            dut.u_ddr_master.m_axi_rvalid, m_ddr_rready);
                         dbg_cnt = dbg_cnt + 1;
                     end
                 end

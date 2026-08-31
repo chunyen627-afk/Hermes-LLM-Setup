@@ -1,14 +1,22 @@
 // matmul_top : register-mapped AXI4 slave front-end for the BF16 matmul core.
 //
 // Register map (32-bit, word-addressed):
-//   0x00 CTRL      bit0 start, bit1 clear
-//   0x04 STATUS    bit0 done, bit1 busy
+//   0x00 CTRL      bit0 start, bit1 reset (soft), bit2 bf16_in (input format)
+//   0x04 STATUS    bit0 done, bit1 busy, bit2 error (sticky)
 //   0x08 W_BASE    DDR4 base address of the weight buffer (D x N BF16)
 //   0x0C X_BASE    DDR4 base address of the activation vector (N BF16)
 //   0x10 OUT_BASE  DDR4 base address for the FP32 output vector (D floats)
 //   0x14 D         number of rows / outputs
 //   0x18 N         reduction length
-//   0x1C reserved
+//   0x1C COUNT     number of outputs produced by the last completed job
+//
+// CTRL semantics:
+//   start  : pulse a job (auto-cleared when the job finishes).
+//   reset  : soft reset -- clears the load FSM, status and counters for one
+//            cycle, then auto-clears. Lets the driver recover from a stuck or
+//            errored job without a full aresetn.
+//   bf16_in: input format select. The datapath is BF16-only, so 1 (BF16) is the
+//            supported value; requesting 0 (FP32) raises STATUS.error.
 //
 // Two data paths, selected by EXTERNAL_DATA:
 //   EXTERNAL_DATA=0 (default): W/x are loaded into the core via $readmemh and
@@ -124,8 +132,11 @@ module matmul_top #(
     reg [31:0] ctrl_reg, status_reg;
     reg [31:0] w_base_reg, x_base_reg, out_base_reg;
     reg [31:0] d_reg, n_reg;
+    reg [31:0] count_reg;      // 0x1C COUNT -- outputs produced by the last job
 
-    wire start = ctrl_reg[0];
+    wire start   = ctrl_reg[0];
+    wire reset_b = ctrl_reg[1];   // soft reset (auto-clears after one cycle)
+    wire bf16_in = ctrl_reg[2];   // input format select: 1=BF16 (supported), 0=FP32
 
     // register read mux (combinational) keyed on the slave's current read index
     wire [AW-1:0] ridx;
@@ -139,6 +150,7 @@ module matmul_top #(
             4:   reg_rdata_mux = out_base_reg;
             5:   reg_rdata_mux = d_reg;
             6:   reg_rdata_mux = n_reg;
+            7:   reg_rdata_mux = count_reg;
             default: reg_rdata_mux = 32'd0;
         endcase
     end
@@ -153,7 +165,6 @@ module matmul_top #(
     always @(posedge aclk or negedge aresetn) begin
         if (!aresetn) begin
             ctrl_reg     <= 32'd0;
-            status_reg   <= 32'd0;
             w_base_reg   <= 32'd0;
             x_base_reg   <= 32'd0;
             out_base_reg <= 32'd0;
@@ -169,10 +180,33 @@ module matmul_top #(
                 6:   n_reg        <= reg_wdata;
                 default: ;
             endcase
-        end else if (fsm_clr_start) begin
-            ctrl_reg[0] <= 1'b0;
+        end else if (fsm_clr_start || soft_reset_done) begin
+            if (fsm_clr_start)   ctrl_reg[0] <= 1'b0;   // job finished, clear start
+            if (soft_reset_done) ctrl_reg[1] <= 1'b0;   // reset consumed, clear reset
         end
     end
+
+    // Soft reset (CTRL.reset): one-cycle pulse that clears the load FSM, status
+    // and counters. Auto-clears so a driver that leaves the bit high does not
+    // hold the design in reset.
+    reg soft_reset_r;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn)      soft_reset_r <= 1'b0;
+        else               soft_reset_r <= reset_b;
+    end
+    // one-cycle pulse the cycle after soft_reset_r, used to auto-clear
+    // CTRL.reset so a driver that leaves the bit high does not hold the design
+    // in reset.
+    reg soft_reset_done;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn)      soft_reset_done <= 1'b0;
+        else               soft_reset_done <= soft_reset_r;
+    end
+
+    // STATUS.error (bit2): sticky. Set when an unsupported input format is
+    // requested (bf16_in=0); cleared by a soft reset or aresetn. Gated so it
+    // does not re-fire during the one-cycle soft-reset window.
+    wire err_set = EXTERNAL_DATA && start && !bf16_in && !soft_reset_r;
 
     // ================= AXI4 slave (register) =================
     axi4s_reg #(
@@ -264,7 +298,7 @@ module matmul_top #(
     // ================= AXI master (DDR4) =================
     wire        rd_start, wr_start;
     wire [31:0] rd_addr, wr_addr;
-    wire [31:0] rd_len_bytes, wr_len_bytes;
+    wire [19:0] rd_len_bytes, wr_len_bytes;   // sized to master RD_LEN_W/WR_LEN_W
     wire        wr_data_in_valid;
     wire [DATA_WIDTH-1:0] wr_data_in;
     wire        wr_data_in_ready;
@@ -351,8 +385,10 @@ module matmul_top #(
     endgenerate
 
     // ---- command addresses / lengths ----
-    wire [31:0] w_len_bytes = D*N*2;   // D*N BF16 * 2 bytes
-    wire [31:0] x_len_bytes = N*2;     // N BF16 * 2 bytes
+    // Lengths are sized to the master's RD_LEN_W/WR_LEN_W (20 bits, max 1 MiB).
+    // D*N*2 and D*4 are far below that for any supported D/N, so no truncation.
+    wire [19:0] w_len_bytes = D*N*2;   // D*N BF16 * 2 bytes
+    wire [19:0] x_len_bytes = N*2;     // N BF16 * 2 bytes
 
     assign rd_addr      = (lstate == L_LOAD_W) ? w_base_reg : x_base_reg;
     assign rd_len_bytes = (lstate == L_LOAD_W) ? w_len_bytes : x_len_bytes;
@@ -360,6 +396,9 @@ module matmul_top #(
     assign wr_len_bytes = D*4;         // D FP32 words * 4 bytes
 
     // ---- FSM ----
+    // status_reg is driven ONLY here (the register-file block no longer touches
+    // it) so there is a single driver. Bit layout: bit0 done, bit1 busy,
+    // bit2 error (sticky).
     always @(posedge aclk or negedge aresetn) begin
         if (!aresetn) begin
             lstate     <= L_IDLE;
@@ -371,14 +410,38 @@ module matmul_top #(
             rd_start_r <= 1'b0;
             wr_start_r <= 1'b0;
             status_reg <= 32'd0;
+            count_reg  <= 32'd0;
+        end else if (soft_reset_r) begin
+            // soft reset (CTRL.reset): clear FSM, status and counters.
+            lstate     <= L_IDLE;
+            w_elem     <= 0;
+            w_beat_el  <= 0;
+            x_elem     <= 0;
+            x_beat_el  <= 0;
+            out_word   <= 0;
+            rd_start_r <= 1'b0;
+            wr_start_r <= 1'b0;
+            status_reg <= 32'd0;
+            count_reg  <= 32'd0;
         end else begin
             rd_start_r <= 1'b0;
             wr_start_r <= 1'b0;
 
+            // sticky error: set when an unsupported input format is requested,
+            // held until a soft reset or aresetn.
+            if (err_set)
+                status_reg[2] <= 1'b1;
+
             case (lstate)
                 L_IDLE: begin
                     status_reg[1] <= 1'b0;   // busy clear
-                    if (EXTERNAL_DATA && start) begin
+                    // Gate on !clr_start_pulse: on the cycle the previous job
+                    // finishes (L_STORE_OUT->L_IDLE), clr_start_pulse is high but
+                    // ctrl_reg[0] (start) has not been cleared yet (registered,
+                    // takes effect next cycle). Without this guard the FSM would
+                    // see start still high and immediately re-trigger a second
+                    // job that reads an empty FIFO.
+                    if (EXTERNAL_DATA && start && bf16_in && !clr_start_pulse) begin
                         lstate     <= L_LOAD_W;
                         w_elem     <= 0;
                         w_beat_el  <= 0;
@@ -386,6 +449,7 @@ module matmul_top #(
                         x_beat_el  <= 0;
                         out_word   <= 0;
                         rd_start_r <= 1'b1;   // start reading W
+                        status_reg[0] <= 1'b0; // done clear (new job)
                         status_reg[1] <= 1'b1; // busy
                     end
                 end
@@ -448,6 +512,7 @@ module matmul_top #(
                         lstate     <= L_IDLE;
                         status_reg[0] <= 1'b1;   // done
                         status_reg[1] <= 1'b0;   // busy clear
+                        count_reg    <= D;        // outputs produced this job
                     end
                 end
 

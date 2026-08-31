@@ -32,13 +32,25 @@ module tb_matmul_top_cdc #(
     localparam X_START = X_BASE/BEAT_BYTES;
     localparam OUT_START = OUT_BASE/BEAT_BYTES;
 
-    // two unrelated clocks: aclk ~100 MHz, xspi_clk ~71.4 MHz (no common period)
+    // async FIFO depth for the x stream. Chosen SMALL (64) so that streaming all
+    // N=288 elements forces the write pointer to WRAP several times -- the only
+    // condition under which a gray-pointer FIFO behaves differently from a binary
+    // one (multiple pointer bits flip at once). Depth 512 (the old value) never
+    // wrapped, so a gray->binary mutation passed silently.
+    localparam XFIFO_DEPTH = 64;
+    localparam XFIFO_AW    = $clog2(XFIFO_DEPTH);
+
+    // two unrelated clocks: aclk ~100 MHz, xspi_clk ~71.4 MHz (no common period).
+    // xclk starts HIGH so its first edge lands at t=7 while aclk's is at t=5 --
+    // the two domains are phase-OFFSET, not locked in phase. A gray-pointer FIFO
+    // only differs from a binary one when the reader can sample the writer mid-
+    // pointer-transition, which requires this offset (see cov_clock_offset).
     reg clk  = 0;
-    reg xclk = 0;
+    reg xclk = 1;
     reg aresetn = 0;
     reg xrst_n  = 0;
     always #5 clk = ~clk;   // 100 MHz
-    always #7 xclk = ~xclk; // ~71.4 MHz
+    always #7 xclk = ~xclk; // ~71.4 MHz (starts high -> first edge at t=7)
 
     integer errors = 0;
 
@@ -47,6 +59,13 @@ module tb_matmul_top_cdc #(
     integer cov_weights_from_ddr   = 0;   // W elements loaded from DDR4 via AXI master
     integer cov_result_written_back = 0;  // output words verified in DDR4 after store
     integer cov_status_polls       = 0;   // STATUS polls while waiting for done
+    // ---- CDC strictness covers (make the gray-code path actually get exercised) ----
+    // The async FIFO only differs from a binary-pointer FIFO when the write pointer
+    // WRAPS (multiple bits flip at once) AND the two clock domains are phase-OFFSET
+    // (so the reader can sample the writer mid-transition). With depth 512 > N=288
+    // the old test never wrapped, so a gray->binary mutation passed silently.
+    integer cov_fifo_wr_wrap       = 0;   // write pointer wrapped past DEPTH-1
+    integer cov_clock_offset       = 0;   // xclk edge landed inside an aclk cycle
 
     // ================= register-slave (s_axi) signals =================
     reg        s_awvalid = 0;
@@ -127,7 +146,7 @@ module tb_matmul_top_cdc #(
     // ================= DUT =================
     matmul_top #(
         .D(D), .N(N), .DATA_WIDTH(DATA_WIDTH),
-        .EXTERNAL_DATA(1), .X_FROM_XSPI(1), .XFIFO_DEPTH(512)
+        .EXTERNAL_DATA(1), .X_FROM_XSPI(1), .XFIFO_DEPTH(XFIFO_DEPTH)
     ) dut (
         .aclk(clk), .aresetn(aresetn),
         .xspi_clk(xclk), .xspi_rst_n(xrst_n),
@@ -168,6 +187,27 @@ module tb_matmul_top_cdc #(
             cov_x_from_xspi = cov_x_from_xspi + 1;
         if (dut.w_load_valid)
             cov_weights_from_ddr = cov_weights_from_ddr + 1;
+    end
+
+    // ---- CDC strictness monitors ----
+    // (a) write-pointer wrap: the FIFO's internal write pointer is a PW-bit
+    //     counter whose low AW bits are the RAM address. When that address
+    //     reaches DEPTH-1, the NEXT write rolls it back to 0 and multiple
+    //     pointer bits flip at once -- exactly the transition a gray code
+    //     exists to make single-bit. Counting these proves the multi-bit
+    //     pointer transition was actually exercised (it is NOT exercised when
+    //     depth > N, as in the old 512-deep test).
+    always @(posedge xclk) begin
+        if (dut.u_xfifo.wr_bin[XFIFO_AW-1:0] == XFIFO_DEPTH - 1)
+            cov_fifo_wr_wrap = cov_fifo_wr_wrap + 1;
+    end
+    // (b) clock offset: an xclk edge that lands strictly inside an aclk cycle
+    //     (not on one). This is what lets the aclk-domain reader sample the
+    //     writer's pointer mid-transition. With both clocks starting at t=0 and
+    //     integer periods they would stay phase-locked and this could never fire.
+    always @(posedge xclk) begin
+        if ($time % 10 != 5)
+            cov_clock_offset = cov_clock_offset + 1;
     end
 
     // ================= DDR4 memory model (AXI4 slave, non-ideal) =================
@@ -358,8 +398,9 @@ module tb_matmul_top_cdc #(
     // ==================================================================
     // xSPI streamer: push all N elements of x onto the xspi clock domain.
     // Runs on xclk, gated by ~xspi_x_full so no element is ever dropped.
-    // The async FIFO (depth 512 > 288) holds them until L_LOAD_X consumes
-    // them in the aclk domain.
+    // The async FIFO (depth 64 < 288) fills and drains repeatedly as the
+    // aclk domain consumes elements in L_LOAD_X, forcing the write pointer
+    // to wrap several times (see cov_fifo_wr_wrap).
     integer xs;
     initial begin
         xspi_x_valid = 0; xspi_x_data = 0; xs = 0;
@@ -373,8 +414,9 @@ module tb_matmul_top_cdc #(
             end
             @(posedge xclk);
         end
-        // deassert after a couple of cycles so the last write settles
-        repeat (3) @(posedge xclk);
+        // deassert after one cycle so the last write settles without pushing an
+        // extra (garbage) element into the FIFO.
+        repeat (1) @(posedge xclk);
         xspi_x_valid = 0;
     end
 
@@ -390,9 +432,9 @@ module tb_matmul_top_cdc #(
         fork
             begin : wd
                 integer wc;
-                for (wc = 0; wc < 400000; wc = wc + 1) @(posedge clk);
-                $display("WATCHDOG: stalled. lstate=%d rd_busy=%b wr_busy=%b core_done=%b xfull=%b",
-                         dut.lstate, dut.rd_busy, dut.wr_busy, dut.core_done, xspi_x_full);
+                for (wc = 0; wc < 1000000; wc = wc + 1) @(posedge clk);
+                $display("WATCHDOG: stalled. lstate=%d rd_busy=%b wr_busy=%b core_done=%b xfull=%b x_elem=%0d",
+                         dut.lstate, dut.rd_busy, dut.wr_busy, dut.core_done, xspi_x_full, dut.x_elem);
                 $finish;
             end
             begin : tests
@@ -404,8 +446,10 @@ module tb_matmul_top_cdc #(
                 reg_write(32'h14, D);              // D
                 reg_write(32'h18, N);              // N
 
-                // start the job (x is already in the async FIFO)
-                reg_write(32'h00, 32'd1);          // CTRL.start = 1
+                // start the job (x is already in the async FIFO). bit0=start,
+                // bit2=bf16_in (this core is BF16-only; bf16_in must be 1 or the
+                // job is rejected with STATUS.error).
+                reg_write(32'h00, 32'd5);          // CTRL.start | CTRL.bf16_in = 1
 
                 // wait for done (STATUS bit0)
                 begin : waitdone
@@ -417,7 +461,7 @@ module tb_matmul_top_cdc #(
                         cov_status_polls = cov_status_polls + 1;
                         if (st[0]) disable waitdone;
                         timeout = timeout + 1;
-                        if (timeout > 60000) begin $display("ERROR: did not finish in time (lstate=%d)", dut.lstate); errors=errors+1; disable waitdone; end
+                        if (timeout > 400000) begin $display("ERROR: did not finish in time (lstate=%d)", dut.lstate); errors=errors+1; disable waitdone; end
                     end while (1);
                 end
 
@@ -449,6 +493,8 @@ module tb_matmul_top_cdc #(
                 // ---- gate markers ----
                 $display("CHECK end_to_end_match %0d %0d", D, errors);
                 $display("COVER cdc_crossing %0d", cov_x_from_xspi);
+                $display("COVER fifo_wr_wrap %0d", cov_fifo_wr_wrap);
+                $display("COVER clock_offset %0d", cov_clock_offset);
                 $display("COVER mem_latency_jitter %0d", cov_mem_jitter);
                 $display("COVER mem_backpressure %0d", cov_mem_bp);
 
@@ -456,7 +502,9 @@ module tb_matmul_top_cdc #(
                     $display("ALL_PASS (CDC e2e D=%0d N=%0d: %0d outputs match C oracle, x via async FIFO)", D, N, D);
                 else
                     $display("HAS_FAILURES (%0d errors)", errors);
-                $display("SIMEND ok");
+                // SIMEND must reflect the real result. The marker protocol
+                // requires the line to be EXACTLY "SIMEND ok" or "SIMEND fail".
+                $display("SIMEND %s", (errors == 0) ? "ok" : "fail");
                 $finish;
             end : tests
         join
