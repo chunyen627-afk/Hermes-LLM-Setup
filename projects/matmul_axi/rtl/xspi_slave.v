@@ -614,9 +614,12 @@ module xspi_slave #(
     wire [15:0] rd_beats_raw   = (rd_frame_bytes + BEAT_BYTES - 16'd1) / BEAT_BYTES;
     wire [15:0] rd_total_beats_comb = (rd_beats_raw == 16'd0) ? 16'd1 : rd_beats_raw;
 
+    // Total bytes to read = whole beats * beat size (a multiple of the beat).
+    wire [15:0] rd_len_bytes = rd_total_beats_comb * BEAT_BYTES;
+
     // rd_len_bytes is driven combinationally for the cycle rd_start pulses.
-    assign reg_rd_len = rd_target_reg  ? {4'd0, rd_total_beats, BEAT_BYTES[7:0]} : {RD_LEN_W{1'b0}};
-    assign ddr_rd_len = !rd_target_reg ? {4'd0, rd_total_beats, BEAT_BYTES[7:0]} : {RD_LEN_W{1'b0}};
+    assign reg_rd_len = rd_target_reg  ? {4'd0, rd_len_bytes} : {RD_LEN_W{1'b0}};
+    assign ddr_rd_len = !rd_target_reg ? {4'd0, rd_len_bytes} : {RD_LEN_W{1'b0}};
 
     always @(posedge aclk or negedge arst_n) begin
         if (!arst_n) begin
