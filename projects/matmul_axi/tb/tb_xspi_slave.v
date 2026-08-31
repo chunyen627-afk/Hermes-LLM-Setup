@@ -259,22 +259,20 @@ module tb_xspi_slave;
 
         #100; arst_n = 1'b1; #100;
 
-        // TEMP DEBUG: per-xspi-edge trace of the front-end FSM (first ~400 edges).
+        // TEMP DEBUG: per-xspi-edge trace of the front-end FSM.
         fork
             begin : xtrace
                 integer xn;
-                reg [31:0] win_lo, win_hi;
-                win_lo = 32'd2_200_000; win_hi = 32'd2_400_000;   // mm_write frame window
                 xn = 0;
                 while (xn < 200000) begin
                     @(posedge xspi_clk); #1;
-                    if ($time >= win_lo && $time <= win_hi)
-                        $display("XTR t=%0t POS phase=%d w_hi=%h w_lo=%h pipe=%h push_en=%b commit=%b cs_rise=%b io=%h",
+                    if (dut.phase == 3'd4 || dut.cs_rise || dut.cs_fall)
+                        $display("XTR t=%0t POS ph=%d w_hi=%h w_lo=%h pipe=%h push_en=%b commit=%b cs_rise=%b io=%h",
                             $time, dut.phase, dut.w_hi, dut.w_lo, {dut.hw_pipe_hi,dut.hw_pipe_lo}, dut.hw_push_en, dut.w_commit, dut.cs_rise, xspi_io);
                     @(negedge xspi_clk); #1;
-                    if ($time >= win_lo && $time <= win_hi)
-                        $display("XTR t=%0t NEG phase=%d w_hi=%h w_lo=%h pipe=%h push_en=%b commit=%b cs_fall=%b io=%h",
-                            $time, dut.phase, dut.w_hi, dut.w_lo, {dut.hw_pipe_hi,dut.hw_pipe_lo}, dut.hw_push_en, dut.w_commit, dut.cs_fall, xspi_io);
+                    if (dut.phase == 3'd4 || dut.cs_rise || dut.cs_fall)
+                        $display("XTR t=%0t NEG ph=%d w_hi=%h w_lo=%h pipe=%h cs_fall=%b io=%h",
+                            $time, dut.phase, dut.w_hi, dut.w_lo, {dut.hw_pipe_hi,dut.hw_pipe_lo}, dut.cs_fall, xspi_io);
                     xn = xn + 1;
                 end
             end
