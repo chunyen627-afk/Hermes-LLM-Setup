@@ -509,7 +509,8 @@ module xspi_slave #(
     //   - writes: pushed at CS deassert (frame complete) carrying the exact
     //             committed halfword count (wr_hw_cnt).
     localparam [15:0] RD_PREFETCH_HW = 16'd16;   // 16 halfwords = 32 bytes = 8 beats
-    wire [15:0] ctl_len = is_read ? RD_PREFETCH_HW : wr_hw_cnt;
+    wire [15:0] ctl_len = is_read ? RD_PREFETCH_HW
+                                  : (wr_hw_cnt + {15'd0, w_commit});
     wire [CTL_W-1:0] ctl_wr_data = {is_read, is_reg, ctl_len, addr_reg};
     wire             ctl_wr_full;
     async_fifo #(
