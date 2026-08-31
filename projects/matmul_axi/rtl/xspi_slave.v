@@ -465,6 +465,12 @@ module xspi_slave #(
     wire                 w_commit  = hw_push_en && !w_wr_full;
     wire                 w_wr_full;
 
+    // TEMP DEBUG: log every committed write halfword (front-end -> FIFO).
+    always @(posedge xspi_clk) begin
+        if (w_commit)
+            $display("WCOMMIT t=%0t addr=%h hw=%h", $time, addr_reg, {hw_pipe_hi, hw_pipe_lo});
+    end
+
     // Number of halfwords actually committed to the write FIFO this frame.
     // Counting w_commit (not posedges) is exact: each committed halfword is one
     // FIFO entry, so the count equals the frame's data length with no off-by-one

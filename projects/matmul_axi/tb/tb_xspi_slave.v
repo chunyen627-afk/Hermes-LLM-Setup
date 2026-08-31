@@ -689,6 +689,7 @@ module axi4_slave_model #(
             end
             if (wr_active && wvalid && wready) begin
                 mem[wr_base_beat + wr_wcount] <= wdata;
+                $display("AXIWR t=%0t beat=%0d addr=%h data=%h", $time, wr_base_beat + wr_wcount, awaddr, wdata);
                 wr_wcount <= wr_wcount + 8'd1;
             end
             // respond B on the cycle after the final W beat is accepted
