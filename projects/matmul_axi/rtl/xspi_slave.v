@@ -127,6 +127,55 @@ module xspi_slave #(
 
     localparam BEAT_BYTES = AXI_DATA_WIDTH / 8;
 
+    // =====================================================================
+    // Controller signal declarations.
+    // These MUST appear before their first use (the FIFO/master instantiations
+    // below and the front-end parser both reference them). Declaring them here
+    // avoids Verilog implicit-wire creation from use-before-declaration.
+    // =====================================================================
+    localparam WR_FIFO_W = 32 + 16;   // {byte_addr[31:0], halfword[15:0]}
+    localparam RD_FIFO_W = 16;        // one halfword per entry
+    localparam CTL_W     = 1 + 1 + 16 + 32;
+
+    localparam RD_IDLE = 1'd0, RD_ACTIVE = 1'd1;
+    localparam WR_IDLE = 2'd0, WR_DRAIN = 2'd1, WR_WAIT = 2'd2;
+    localparam HW_PER_BEAT = BEAT_BYTES / 2;
+
+    // write FIFO read side (aclk)
+    wire [WR_FIFO_W-1:0] w_rd_data;
+    wire                 w_rd_empty;
+
+    // read FIFO (aclk -> xspi)
+    wire [RD_FIFO_W-1:0] rd_shift_out;   // next halfword to present on IO
+    wire                 rd_rd_empty;    // read-FIFO empty (xspi side)
+    wire [RD_FIFO_W-1:0] rd_wr_data;     // halfword pushed into the read FIFO
+    wire                 rd_wr_en;
+
+    // control FIFO
+    reg                  ctl_push;
+    wire [CTL_W-1:0]     ctl_rd_data;
+    wire                 ctl_rd_empty;
+    wire                 ctl_rd_en;      // pop the control FIFO (aclk side)
+
+    // master command/data wires (driven by the engines below)
+    reg                     reg_rd_start, ddr_rd_start;
+    reg [AXI_ADDR_WIDTH-1:0] reg_rd_addr, ddr_rd_addr;
+    reg                     reg_wr_start, ddr_wr_start;
+    reg [AXI_ADDR_WIDTH-1:0] reg_wr_addr, ddr_wr_addr;
+    wire                    reg_rd_busy, ddr_rd_busy;
+    wire                    reg_rd_valid, ddr_rd_valid;
+    wire [AXI_DATA_WIDTH-1:0] reg_rd_data, ddr_rd_data;
+    wire                    reg_rd_last, ddr_rd_last;
+    wire                    reg_rd_ready, ddr_rd_ready;   // read-channel ready (read engine)
+    wire                    reg_wr_busy, ddr_wr_busy;
+    wire                    reg_wr_done, ddr_wr_done;
+    wire                    reg_wr_dr, ddr_wr_dr;         // wr_data_in_ready (from master)
+    wire [AXI_DATA_WIDTH-1:0] reg_wr_data, ddr_wr_data;   // wr_data_in (to master)
+    wire                    reg_wr_dv, ddr_wr_dv;         // wr_data_in_valid (to master)
+
+    // write engine state
+    reg [1:0]  wr_state;
+
     // ================= opcode constants =================
     localparam CMD_READ        = 8'h00;
     localparam CMD_READ_LB     = 8'h20;   // linear-burst read (memory-mapped)
@@ -387,7 +436,6 @@ module xspi_slave #(
     // ================= xspi -> aclk : write-data FIFO =================
     // Each committed write halfword (16 bits) is pushed with its running byte
     // address. The aclk side assembles beats and issues AXI writes.
-    localparam WR_FIFO_W = 32 + 16;   // {byte_addr[31:0], halfword[15:0]}
 
     // Write-data pipeline (fixes the off-by-one in the naive "push every data
     // cycle" approach, which pushed a stale first halfword and dropped the last):
@@ -424,11 +472,8 @@ module xspi_slave #(
         .rd_clk(aclk),     .rd_en(wr_state == WR_DRAIN && !w_rd_empty),
                             .rd_data(w_rd_data), .rd_empty(w_rd_empty)
     );
-    wire [WR_FIFO_W-1:0] w_rd_data;
-    wire                 w_rd_empty;
 
     // ================= aclk -> xspi : read-data FIFO =================
-    localparam RD_FIFO_W = 16;   // one halfword per entry
     wire                 rd_wr_full;
     async_fifo #(
         .DATA_WIDTH(RD_FIFO_W),
@@ -438,9 +483,6 @@ module xspi_slave #(
         .wr_en(rd_wr_en),  .wr_data(rd_wr_data), .wr_full(rd_wr_full),
         .rd_clk(xspi_clk), .rd_en(rd_rd_en),     .rd_data(rd_shift_out), .rd_empty(rd_rd_empty)
     );
-    wire [RD_FIFO_W-1:0] rd_shift_out;   // next halfword to present on IO
-    wire                 rd_rd_empty;    // read-FIFO empty (xspi side)
-    wire [RD_FIFO_W-1:0] rd_wr_data;     // halfword pushed into the read FIFO
 
     // ================= aclk domain: AXI bridge controller =================
     // Decodes the host address into reg vs DDR4, and drives two axi4_master
@@ -452,7 +494,6 @@ module xspi_slave #(
     // Control word: {is_read, is_reg, hw_cnt[15:0], addr[31:0]} = 50 bits.
     //   - reads : pushed at end of P_ADDR (addr valid) so the fetch starts early
     //   - writes: pushed at CS deassert (frame complete) carrying the length
-    localparam CTL_W = 1 + 1 + 16 + 32;
     wire [CTL_W-1:0] ctl_wr_data = {is_read, is_reg, hw_cnt, addr_reg};
     wire             ctl_wr_full;
     async_fifo #(
@@ -463,9 +504,6 @@ module xspi_slave #(
         .wr_en(ctl_push),  .wr_data(ctl_wr_data), .wr_full(ctl_wr_full),
         .rd_clk(aclk),     .rd_en(ctl_rd_en),     .rd_data(ctl_rd_data), .rd_empty(ctl_rd_empty)
     );
-    wire [CTL_W-1:0] ctl_rd_data;
-    wire             ctl_rd_empty;
-    wire             ctl_rd_en;          // pop the control FIFO (aclk side)
 
     // Pop the control FIFO on the cycle an engine latches it (f_valid high).
     assign ctl_rd_en = (rd_state == RD_IDLE && f_valid && f_is_read) ||
@@ -473,7 +511,6 @@ module xspi_slave #(
 
     // Push timing: reads at end of P_ADDR (so the fetch starts during the dummy
     // cycles); writes at CS deassert (frame complete, length now known).
-    reg  ctl_push;
     always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n)      ctl_push <= 1'b0;
         else              ctl_push <= (is_read && phase == P_ADDR_D) ||
