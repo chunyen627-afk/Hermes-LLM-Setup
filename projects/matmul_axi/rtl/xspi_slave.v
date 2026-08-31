@@ -510,12 +510,12 @@ module xspi_slave #(
     assign ctl_rd_en = (rd_state == RD_IDLE && f_valid && f_is_read) ||
                        (wr_state == WR_IDLE && f_valid && !f_is_read);
 
-    // Push timing: both reads and writes push at CS deassert, when hw_cnt has
-    // its final value. The testbench calls wait_axi_idle after each frame, so
-    // the DUT has time to complete the AXI transfer before the next frame starts.
+    // Push timing: reads at end of P_ADDR (so the fetch starts during the dummy
+    // cycles); writes at CS deassert (frame complete, length now known).
     always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n)      ctl_push <= 1'b0;
-        else              ctl_push <= cs_rise && (phase == P_DATA);
+        else              ctl_push <= (is_read && phase == P_ADDR_D) ||
+                                      (cs_rise && (phase == P_DATA) && !is_read);
     end
 
     // ---- aclk-side frame state (decoded from the control word) ----
