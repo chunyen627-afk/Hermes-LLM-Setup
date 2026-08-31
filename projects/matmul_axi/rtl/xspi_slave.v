@@ -446,12 +446,16 @@ module xspi_slave #(
     //   rising edge of cycle i+1     : push hw_i into the FIFO
     // The final halfword is pushed on the cycle after the last data cycle, which
     // is exactly when CS deasserts -- so it is captured before the frame ends.
-    reg [7:0]  hw_pipe_hi, hw_pipe_lo;
-    reg        hw_push_en;
-    always @(posedge xspi_clk or negedge arst_n) begin
-        if (!arst_n)      hw_push_en <= 1'b0;
-        else              hw_push_en <= (phase == P_DATA) && !is_read;
-    end
+    //
+    // hw_push_en must be COMBINATIONAL (not registered): if it were registered,
+    // it would lag `phase` by one cycle, pushing the first halfword late and the
+    // last halfword after CS deasserts (dropping hw0 and shifting the rest).
+    // With it combinational, the push at posedge N (the first P_DATA posedge)
+    // emits hw_pipe which was loaded at negedge N-1 = hw0, and each subsequent
+    // posedge emits the next halfword, with the last one landing just before CS
+    // deasserts.
+    wire        hw_push_en = (phase == P_DATA) && !is_read;
+    reg [7:0]   hw_pipe_hi, hw_pipe_lo;
     always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
