@@ -463,6 +463,17 @@ module xspi_slave #(
     wire                 w_commit  = hw_push_en && !w_wr_full;
     wire                 w_wr_full;
 
+    // Number of halfwords actually committed to the write FIFO this frame.
+    // Counting w_commit (not posedges) is exact: each committed halfword is one
+    // FIFO entry, so the count equals the frame's data length with no off-by-one
+    // from the P_DATA entry/exit edges. Reset at frame start.
+    reg [15:0] wr_hw_cnt;
+    always @(posedge xspi_clk or negedge arst_n) begin
+        if (!arst_n)      wr_hw_cnt <= 16'd0;
+        else if (cs_fall) wr_hw_cnt <= 16'd0;   // fresh frame
+        else if (w_commit) wr_hw_cnt <= wr_hw_cnt + 16'd1;
+    end
+
     async_fifo #(
         .DATA_WIDTH(WR_FIFO_W),
         .DEPTH(WR_FIFO_DEPTH)
@@ -491,10 +502,15 @@ module xspi_slave #(
     // the address is known (end of P_ADDR) so data is prefetched into the read
     // FIFO before the host reaches the data phase.
     //
-    // Control word: {is_read, is_reg, hw_cnt[15:0], addr[31:0]} = 50 bits.
-    //   - reads : pushed at end of P_ADDR (addr valid) so the fetch starts early
-    //   - writes: pushed at CS deassert (frame complete) carrying the length
-    wire [CTL_W-1:0] ctl_wr_data = {is_read, is_reg, hw_cnt, addr_reg};
+    // Control word: {is_read, is_reg, len[15:0], addr[31:0]} = 50 bits.
+    //   - reads : pushed at end of P_ADDR (addr valid) so the fetch starts early.
+    //             The length is not yet known (data phase hasn't happened), so a
+    //             fixed prefetch size is used (SPEC §6: prefetch, discard unused).
+    //   - writes: pushed at CS deassert (frame complete) carrying the exact
+    //             committed halfword count (wr_hw_cnt).
+    localparam [15:0] RD_PREFETCH_HW = 16'd16;   // 16 halfwords = 32 bytes = 8 beats
+    wire [15:0] ctl_len = is_read ? RD_PREFETCH_HW : wr_hw_cnt;
+    wire [CTL_W-1:0] ctl_wr_data = {is_read, is_reg, ctl_len, addr_reg};
     wire             ctl_wr_full;
     async_fifo #(
         .DATA_WIDTH(CTL_W),
