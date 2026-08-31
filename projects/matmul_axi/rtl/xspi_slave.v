@@ -456,12 +456,16 @@ module xspi_slave #(
     // deasserts.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
-    always @(negedge xspi_clk or negedge arst_n) begin
+    // Load the pipeline at the SAME posedge that samples w_hi, so both bytes of a
+    // halfword come from one valid data cycle. (Loading at negedge used the
+    // previous posedge's w_hi, which during the first data cycle was still the
+    // stale/dummy-phase value -> hw0 dropped, hw1 hi byte X.)
+    always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
             hw_pipe_lo <= 8'h00;
         end else if ((phase == P_DATA) && !is_read) begin
-            hw_pipe_hi <= w_hi;          // upper byte (set this cycle's rising edge)
+            hw_pipe_hi <= w_hi;          // upper byte (sampled this posedge)
             hw_pipe_lo <= xspi_io[7:0];  // lower byte (on the bus now)
         end
     end
