@@ -8,7 +8,6 @@
     "4_timing": "時序/資源: 合成 + STA; 本機無 Vivado -> 一律標 [ASSUMPTION]",
     "_rule": "不要跳階段。第 2 階沒過就進第 3 階, 症狀會是『整合後偶爾錯幾筆』, 那是最難查的一類 bug。"
   },
-
   "_comment": [
     "驗收設定檔 — 每個 block 做完都要跑到綠，才算完成。",
     "跑法: python <skills>/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block <name>",
@@ -18,50 +17,58 @@
     "改這個檔的規則: 只能「加」驗收項目, 不能為了讓測試過而「拿掉」require_cover。",
     "真的要拿掉某項, 理由必須寫進 HANDOFF.md 的『已確認行不通的做法』並註明日期。"
   ],
-
   "script": "C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py",
-
   "blocks": {
     "f32_units": {
       "status": "done",
       "stage": "1_function",
       "note": "bit-exact vs numpy float32 ref (same f32_ref.py as check_f32.py); wrapper compiles+runs TB and emits markers. Sub path (a-b) now checked too.",
-      "cmd": ["python", "ref/gate_f32_units.py"],
+      "cmd": [
+        "python",
+        "ref/gate_f32_units.py"
+      ],
       "cwd": ".",
       "require_cover": []
     },
-
     "matmul_core": {
       "status": "done",
       "stage": "1_function",
       "note": "40/40 bit-exact vs c_matmul_oracle.c, 已複驗",
       "_gotcha": "TB 用 $readmemh(\"expected.hex\") 相對路徑, 必須在 out/mmtest/ 跑, 不然全部 mismatch (看起來像 RTL 壞掉, 其實是 cwd 錯)",
       "tb": "tb/tb_matmul_core.v",
-      "src": ["rtl/matmul_core.v", "rtl/f32_mul.v", "rtl/f32_add.v"],
+      "src": [
+        "rtl/matmul_core.v",
+        "rtl/f32_mul.v",
+        "rtl/f32_add.v"
+      ],
       "top": "tb_matmul_core",
       "run_in": "out/mmtest",
       "require_cover": []
     },
-
     "axi4_slave_reg": {
       "status": "done",
       "stage": "2_interface",
       "note": "32/64/128/256 四種位寬全過, 已複驗",
       "tb": "tb/tb_axi4_slave_reg.v",
-      "src": ["rtl/axi4_slave_reg.v"],
+      "src": [
+        "rtl/axi4_slave_reg.v"
+      ],
       "top": "tb_axi4_slave_reg",
       "sweep": "AXI_DATA_WIDTH=32,64,128,256",
       "require_cover": []
     },
-
     "axi4_master": {
       "status": "in_progress",
       "stage": "2_interface",
       "note": "burst engine: 4KB-split, MAX_RD_BURSTS outstanding reads, serialized writes. TB emits gate markers + exercises all 6 covers.",
       "tb": "tb/tb_axi4_master.v",
-      "src": ["rtl/axi4_master.v"],
+      "src": [
+        "rtl/axi4_master.v"
+      ],
       "top": "tb_axi4_master",
-      "define": ["AXI_MASTER_ASSERT"],
+      "define": [
+        "AXI_MASTER_ASSERT"
+      ],
       "require_cover": [
         "single_burst",
         "back_to_back",
@@ -71,7 +78,6 @@
         "error_response"
       ]
     },
-
     "matmul_top": {
       "status": "in_progress",
       "stage": "3_integration",
@@ -99,15 +105,102 @@
         "mem_backpressure",
         "mem_refresh_stall",
         "mem_read_write_turnaround"
-      ]
+      ],
+      "spec": {
+        "CTRL.start": {
+          "pattern": "ctrl_reg\\[0\\]|ctrl_reg\\s*\\[\\s*0\\s*\\]|start_bit",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x00 bit0"
+        },
+        "CTRL.reset": {
+          "pattern": "ctrl_reg\\[1\\]|soft_reset",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x00 bit1 - 目前沒實作"
+        },
+        "CTRL.bf16_in": {
+          "pattern": "ctrl_reg\\[2\\]|bf16_in",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x00 bit2 - 目前沒實作"
+        },
+        "STATUS.busy": {
+          "pattern": "status_reg\\[0\\]|busy",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x04 bit0"
+        },
+        "STATUS.done": {
+          "pattern": "status_reg\\[1\\]|done_latch|status_done",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x04 bit1"
+        },
+        "STATUS.error": {
+          "pattern": "status_reg\\[2\\]|err_latch|status_err",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x04 bit2 - 目前沒實作"
+        },
+        "M_DIM": {
+          "pattern": "M_DIM|m_dim|d_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x08"
+        },
+        "N_DIM": {
+          "pattern": "N_DIM|n_dim|n_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x0C"
+        },
+        "W_BASE": {
+          "pattern": "w_base_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "0x10"
+        },
+        "X_BASE": {
+          "pattern": "x_base_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "0x14"
+        },
+        "OUT_BASE": {
+          "pattern": "out_base_reg",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "0x18"
+        },
+        "COUNT": {
+          "pattern": "COUNT|count_reg|out_count",
+          "in": [
+            "rtl/matmul_top.v"
+          ],
+          "why": "ARCHITECTURE.md 0x1C 已產生幾筆輸出 - 目前沒實作"
+        }
+      }
     },
-
     "cdc": {
       "status": "done",
       "stage": "2_interface",
       "note": "async FIFO: gray pointer + 兩級同步, 資料走 dual-port RAM。2000 words 0 errors, 變異測試驗證過",
       "tb": "tb/tb_async_fifo.v",
-      "src": ["rtl/async_fifo.v"],
+      "src": [
+        "rtl/async_fifo.v"
+      ],
       "top": "tb_async_fifo",
       "require_cover": [
         "slow_to_fast",
@@ -117,31 +210,36 @@
         "reset_during_traffic"
       ]
     },
-
     "xspi_slave": {
-      "status": "pending",
-      "stage": "0_define",
-      "note": "xSPI->AXI bridge: STM32 當 master 驅動, FPGA 當 slave。ARCHITECTURE.md 第 95 行畫的那個方塊, 目前是空的",
+      "status": "in_progress",
+      "stage": "2_interface",
+      "note": "PSRAM-compatible xSPI slave. Target = AP Memory APS256XX 32MB Octal PSRAM @0x90000000 (XSPI1). Contract derived from the REAL board BSP source (aps256xx.c/h + stm32h7s78_discovery_xspi.c), written up in ARCHITECTURE.md section 9. Frame = [instr 8b SDR][addr 32b DDR=4cyc][dummy latency-1=4cyc][data DDR 16b/cyc]. Boot: Reset(0xFF)->ReadReg/WriteReg MR0/MR4/MR8->EnableMemoryMapped. Memory-mapped read=0x20 / write=0xA0 (linear burst, x8). TB drives a realistic OCTOSPI master model and must fire all 8 covers.",
       "_why": "沒有它整個系統接不起來 —— activation 進不來、結果出不去。matmul IP 再完整也只是個孤島",
-      "_scope": "位元流解析(命令/位址/資料分段) + 跨時脈域(xspi_clk -> aclk, 用現成的 async_fifo) + 當 AXI master 寫 DDR4。matmul_top 已經預留 xspi_clk 與 X_FROM_XSPI 參數",
+      "_scope": "位元流解析(命令/位址/資料分段, DDR address+data) + 模式暫存器檔(MR0-MR8, APM ID) + 跨時脈域(xspi_clk -> aclk, 用現成的 async_fifo) + 當 AXI master 寫 DDR4。matmul_top 已經預留 xspi_clk 與 X_FROM_XSPI 參數",
       "_note_vivado": "Vivado 的 AXI Quad SPI 不適用 —— 那是 FPGA 當 SPI master 用的, 且 AXI-Lite 介面不能當資料通道。自己寫比較實在, 核心邏輯比 axi4_master 簡單",
       "tb": "tb/tb_xspi_slave.v",
-      "src": ["rtl/xspi_slave.v", "rtl/async_fifo.v"],
+      "src": [
+        "rtl/xspi_slave.v",
+        "rtl/async_fifo.v"
+      ],
       "top": "tb_xspi_slave",
       "require_cover": [
-        "single_transfer",
-        "back_to_back",
-        "cdc_crossing",
-        "master_stalls_mid_frame",
-        "cs_deassert_mid_frame",
-        "clock_ratio_extremes"
-      ]
+        "host_init_sequence",
+        "memory_mapped_write",
+        "memory_mapped_read",
+        "burst_address_increment",
+        "cs_deassert_mid_transfer",
+        "dummy_cycle_timing",
+        "clock_ratio_extremes",
+        "irregular_host_timing"
+      ],
+      "_must": "接得起來是驗收標準不是目標：STM32 的初始化流程（讀 ID/設 mode register/latency 校準）要支援，不然它開機就掛住，後面全部免談",
+      "_spec_source": "CONFIRMED from board BSP: C:/Users/pjunm/tetris_h7s78/cube/Drivers/BSP/Components/aps256xx/{aps256xx.c,aps256xx.h} + bsp/stm32h7s78_discovery_xspi.c. Full contract in ARCHITECTURE.md section 9 (device identity, opcodes, frame structure, boot sequence, memory-mapped path, assumptions)."
     },
-
     "matmul_top_cdc": {
       "status": "in_progress",
       "stage": "3_integration",
-      "note": "x 經 async FIFO 跨時脈域的 end-to-end, 288/288 vs C oracle",
+      "note": "x 經 async FIFO 跨時脈域的 end-to-end, 288/288 vs C oracle. FIFO depth=64 (<N) so the write pointer wraps several times, and xclk is phase-offset from aclk -- together these make the gray-code path actually get exercised (a gray->binary mutation in async_fifo.v now FAILS this block).",
       "_gotcha": "資料檔用相對路徑, 必須在 out/ 跑",
       "tb": "tb/tb_matmul_top_cdc.v",
       "src": [
@@ -158,12 +256,13 @@
       "run_in": "out",
       "require_cover": [
         "cdc_crossing",
+        "fifo_wr_wrap",
+        "clock_offset",
         "mem_latency_jitter",
         "mem_backpressure"
       ]
     }
   },
-
   "_cover_meanings": {
     "single_burst": "單一 burst 讀寫, 資料 bit-exact",
     "back_to_back": "前一筆 B 還沒回就發下一個 AW — 沒數到代表管線化從沒被測過",
@@ -180,6 +279,8 @@
     "cs_deassert_mid_frame": "CS 在傳輸未完成時被拉高的次數 - 中止的傳輸要能乾淨復原, 不能讓 FSM 卡在半途",
     "clock_ratio_extremes": "在最慢與最快的 SCK/aclk 比例下都測過 - CDC 的行為在兩端最容易出事",
     "cdc_crossing": "資料真的經過 async FIFO 跨時脈域的次數 - 若兩邊同頻或走了旁路, 等於 CDC 沒被測到",
+    "fifo_wr_wrap": "async FIFO 寫入指標繞回(地址到 DEPTH-1)的次數 - gray code 只有在指標多位元同時翻轉時才跟 binary 不同, 不繞回就等於沒測到同步機制 (depth>N 時此數為 0)",
+    "clock_offset": "xclk 邊沿落在 aclk 週期中間(非對齊)的次數 - 兩域相位錯開, 讀端才可能取到寫端指標轉換中的值; 若兩時脈從 t=0 同相且整數倍頻, 此數恆為 0",
     "mem_latency_jitter": "記憶體回應延遲不是固定值的次數 - 真 DDR4 的 row hit(~15ns) 與 row miss(precharge+activate ~45ns) 差三倍, 固定延遲測不出 outstanding 管理的問題",
     "mem_backpressure": "記憶體把 arready/awready 拉低的拍數 - MIG 命令佇列滿時會反壓, 恆為 1 等於這條路徑沒測過",
     "mem_refresh_stall": "記憶體插入長停頓(模擬 refresh)的次數 - 真 DDR4 每 7.8us 強制 refresh 期間不能存取, 會不會讓計數器溢位或 FSM 卡死",
@@ -188,6 +289,18 @@
     "fast_to_slow": "快到慢的傳輸數",
     "fifo_full": "FIFO 滿並產生反壓的次數",
     "fifo_empty": "FIFO 空並讓下游等待的次數",
-    "reset_during_traffic": "傳輸進行中被 reset 且正確復原的次數"
-  }
+    "reset_during_traffic": "傳輸進行中被 reset 且正確復原的次數",
+    "host_init_sequence": "STM32 開機時 OCTOSPI 的初始化流程被完整回應的次數 - 讀 ID/設 mode register 沒回應的話主機會掛在那裡，這是接不接得起來的第一關",
+    "memory_mapped_write": "主機用 *(uint32_t*)0x9000xxxx = x 這種方式寫入成功的次數",
+    "memory_mapped_read": "同上但讀取，且讀回的值正確",
+    "burst_address_increment": "連續位址突發傳輸時位址自動遞增正確的次數 - 含跨越 wrap 邊界",
+    "cs_deassert_mid_transfer": "CS 在傳輸未完成時被拉高的次數 - 真實主機會因中斷/DMA 這樣做，要能乾淨中止並復原",
+    "dummy_cycle_timing": "讀取的 dummy cycles 期間行為正確的次數 - 主機提早取資料會怎樣",
+    "irregular_host_timing": "主機時序不規律（中途停 SCK、存取間隔忽長忽短）的次數 - 照想像寫的 master 永遠準時，真的 OCTOSPI 不會",
+    "access_slave_reg": "STM32 透過 xSPI 讀寫 matmul_top 暫存器成功的次數 - 設定 W_BASE/D/N、按 start、輪詢 STATUS 都要能做",
+    "access_ddr4": "STM32 透過 xSPI 讀寫 DDR4 成功的次數 - 灌權重、寫 activation、讀結果",
+    "address_decode": "位址被正確分流到暫存器 vs DDR4 的次數 - 解碼錯了資料會寫到別的地方",
+    "interleaved_reg_and_ddr": "大量 DDR4 傳輸進行中穿插暫存器存取的次數 - 灌 30MB 權重時主機還讀不讀得到 STATUS"
+  },
+  "_spec_doc": "spec 區塊：架構文件承諾的每一項，都要能在原始碼裡找到。 gate 擋得住『測試沒跑』『路徑沒走過』，但擋不住『規格書上有、程式碼裡沒有』 —— 沒實作的暫存器不會有測試失敗，因為根本沒人替它寫測試。 規則同 require_cover：只能加不能減；真的不做就改文件，不要讓兩邊不一致。"
 }
