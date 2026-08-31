@@ -267,8 +267,8 @@ module tb_xspi_slave;
                 while (xn < 200000) begin
                     @(posedge xspi_clk); #1;
                     if (dut.phase == 3'd4 || dut.cs_rise || dut.cs_fall)
-                        $display("XTR t=%0t pos phase=%d hw_cnt=%0d wr_hw_cnt=%0d w_commit=%b hw_push_en=%b cs_rise=%b io=%h",
-                            $time, dut.phase, dut.hw_cnt, dut.wr_hw_cnt, dut.w_commit, dut.hw_push_en, dut.cs_rise, xspi_io);
+                        $display("XTR t=%0t pos phase=%d wr_hw_cnt=%0d w_commit=%b hw_push_en=%b cs_rise=%b io=%h pipe=%h",
+                            $time, dut.phase, dut.wr_hw_cnt, dut.w_commit, dut.hw_push_en, dut.cs_rise, xspi_io, {dut.hw_pipe_hi, dut.hw_pipe_lo});
                     xn = xn + 1;
                 end
             end
