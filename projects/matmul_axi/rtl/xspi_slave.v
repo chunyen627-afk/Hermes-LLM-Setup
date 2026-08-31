@@ -334,8 +334,6 @@ module xspi_slave #(
                 end
 
                 P_DATA: begin
-                    if (!cs_rise)
-                        hw_cnt <= hw_cnt + 16'd1;      // one halfword per data cycle
                     if (is_read) begin
                         rd_frame_active <= 1'b1;   // host is reading: keep prefetching
                         // DDR read: drive the upper byte of the current halfword

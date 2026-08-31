@@ -259,6 +259,21 @@ module tb_xspi_slave;
 
         #100; arst_n = 1'b1; #100;
 
+        // TEMP DEBUG: per-xspi-edge trace of the front-end FSM (first ~400 edges).
+        fork
+            begin : xtrace
+                integer xn;
+                xn = 0;
+                while (xn < 200000) begin
+                    @(posedge xspi_clk); #1;
+                    if (dut.phase == 3'd4 || dut.cs_rise || dut.cs_fall)
+                        $display("XTR t=%0t pos phase=%d hw_cnt=%0d cs_rise=%b cs_fall=%b io=%h",
+                            $time, dut.phase, dut.hw_cnt, dut.cs_rise, dut.cs_fall, xspi_io);
+                    xn = xn + 1;
+                end
+            end
+        join_none
+
         // TEMP DEBUG: monitor key DUT internals.
         dbg_cnt = 0;
         fork
