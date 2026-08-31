@@ -733,13 +733,16 @@ module xspi_slave #(
     wire [31:0] w_fifo_addr = w_rd_data[WR_FIFO_W-1:32];
     wire [15:0] w_fifo_hw   = w_rd_data[31:16];
 
-    // total bytes for the frame (host writes are 4-byte aligned, so this is a
-    // multiple of the beat size in practice).
-    wire [15:0] wr_frame_bytes = {4'd0, f_len_hw, 1'b0};
+    // total bytes for the frame, rounded UP to a whole number of beats (>= 1).
+    // The axi4_master requires wr_len_bytes to be a multiple of the beat size.
+    wire [15:0] wr_frame_bytes = {4'd0, f_len_hw, 1'b0};   // hw_cnt * 2 bytes
+    wire [15:0] wr_beats_raw   = (wr_frame_bytes + BEAT_BYTES - 16'd1) / BEAT_BYTES;
+    wire [15:0] wr_total_beats = (wr_beats_raw == 16'd0) ? 16'd1 : wr_beats_raw;
+    wire [15:0] wr_len_bytes   = wr_total_beats * BEAT_BYTES;
 
     // write length in bytes, driven combinationally for the wr_start cycle.
-    assign reg_wr_len  = wr_target_reg  ? {4'd0, wr_frame_bytes} : {RD_LEN_W{1'b0}};
-    assign ddr_wr_len  = !wr_target_reg ? {4'd0, wr_frame_bytes} : {RD_LEN_W{1'b0}};
+    assign reg_wr_len  = wr_target_reg  ? {RD_LEN_W-16{1'b0}, wr_len_bytes} : {RD_LEN_W{1'b0}};
+    assign ddr_wr_len  = !wr_target_reg ? {RD_LEN_W-16{1'b0}, wr_len_bytes} : {RD_LEN_W{1'b0}};
 
     // the master accepts the presented beat this cycle
     wire wr_accept = wr_beat_valid &&
