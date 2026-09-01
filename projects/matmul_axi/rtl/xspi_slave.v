@@ -459,10 +459,10 @@ module xspi_slave #(
     // negedge, lower at posedge). Registers hold:
     //   w_hi = upper_i  (set at posedge i)
     //   w_lo = lower_i  (set at negedge i+1)
-    // Both are stable pre-edge at posedge i+1, so loading the pipeline THERE gives
-    // hw_pipe = {upper_i, lower_i} = hw_i. The final halfword is pushed on the cycle
-    // after the last data cycle, which is exactly when CS deasserts -- captured
-    // before the frame ends.
+    // Both are stable and NOT being updated at the negedge of cycle i+1, so loading
+    // hw_pipe THERE gives hw_pipe = {upper_i, lower_i} = hw_i. The push happens on
+    // the following posedge (i+2), which is when CS deasserts for the last halfword --
+    // captured before the frame ends.
     //
     // hw_push_en must be COMBINATIONAL (not registered): if it were registered it
     // would lag `phase` by one cycle, pushing the first halfword late and the last
@@ -471,17 +471,16 @@ module xspi_slave #(
     // negedge N-1 = hw0, and each subsequent posedge emits the next halfword.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
-    // Load the pipeline at the posedge where BOTH bytes of a halfword are stable:
-    // w_hi holds upper_i (from this cycle's posedge sample) and w_lo holds lower_i
-    // (from the previous negedge). Reading xspi_io here would give upper_{i+1}
-    // (the bus has already moved on), which is why the naive version mixed bytes.
-    always @(posedge xspi_clk or negedge arst_n) begin
+    // Load the pipeline at the negedge where BOTH bytes of a halfword are stable and
+    // neither is being updated this edge. (Loading at posedge read w_hi/w_lo via NBA,
+    // which returned the PREVIOUS cycle's values -> one-cycle shift + X first hw.)
+    always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
             hw_pipe_lo <= 8'h00;
         end else if ((phase == P_DATA) && !is_read) begin
-            hw_pipe_hi <= w_hi;          // upper byte (sampled this posedge)
-            hw_pipe_lo <= w_lo;          // lower byte (sampled previous negedge)
+            hw_pipe_hi <= w_hi;          // upper byte (stable since this cycle's posedge)
+            hw_pipe_lo <= w_lo;          // lower byte (just sampled this negedge)
         end
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
@@ -572,10 +571,14 @@ module xspi_slave #(
     reg [15:0] f_len_hw;                 // halfwords in this frame
     reg        f_valid;                  // a latched control word is pending for the engines
     wire       f_is_reg_region = (f_addr < DDR_BASE);   // reg region is below DDR_BASE
-    // SPEC §5: the host address IS the target address. The reg region maps to
-    // matmul_top.s_axi_* and the DDR region maps to MIG DDR4, both at their own
-    // base (0x9000_0000 / 0x9001_0000). No remap: pass f_addr through verbatim.
-    wire [31:0] f_target_addr  = f_addr;
+    // SPEC §5: the host sees one contiguous space from 0x9000_0000. The bridge
+    // decodes which slave and presents the OFFSET within that slave's own space:
+    //   reg region (0x9000_0000..): offset = f_addr - REG_BASE  -> matmul_top.s_axi_*
+    //   DDR region (0x9001_0000..): offset = f_addr - DDR_BASE  -> MIG DDR4
+    // Both slaves are addressed from their own base (0), so the offset is what the
+    // AXI master drives. (Passing the full host address through would index far
+    // outside each slave's memory.)
+    wire [31:0] f_target_addr  = f_is_reg_region ? (f_addr - REG_BASE) : (f_addr - DDR_BASE);
 
     // Latch the control word into frame state when the FIFO has data. The latched
     // f_* values only become valid one cycle after the latch, so f_valid is set on
