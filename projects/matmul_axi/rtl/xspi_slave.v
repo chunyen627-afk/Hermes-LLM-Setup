@@ -505,6 +505,15 @@ module xspi_slave #(
             $display("WPIPE t=%0t POS io=%h w_hi=%h w_lo=%h pipe={%h,%h} push=%b",
                 $time, xspi_io, w_hi, w_lo, hw_pipe_hi, hw_pipe_lo, hw_push_en);
     end
+    // TEMP DEBUG: phase + raw wire on every edge (dummy/data entry alignment).
+    always @(posedge xspi_clk) begin
+        if (!is_read && (phase == P_DUMMY || phase == P_DATA))
+            $display("PH t=%0t POS ph=%0d io=%h", $time, phase, xspi_io);
+    end
+    always @(negedge xspi_clk) begin
+        if (!is_read && (phase == P_DUMMY || phase == P_DATA))
+            $display("PH t=%0t NEG ph=%0d io=%h", $time, phase, xspi_io);
+    end
     always @(negedge xspi_clk) begin
         if ((phase == P_DATA) && !is_read)
             $display("WPIPE t=%0t NEG io=%h w_hi=%h w_lo=%h pipe={%h,%h} push=%b",
