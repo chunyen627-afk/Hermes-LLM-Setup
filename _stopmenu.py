@@ -140,10 +140,63 @@ def run_next_stage(project, auto=False, gate_reason=""):
         + "\n\n=== 這一輪要做的 ===\n"
         "照報告裡「下一步」那段往下做。做之前先確認那些步驟現在還合理"
         "（有沒有更該先做的、有沒有已經做掉的）。\n\n"
-        "⚠ 三件提醒：\n"
+        "⚠ 七件提醒：\n"
         "1. 做完一個可驗證的單元就停下來報告，不要一路衝到撞上限\n"
         "2. ctx 到 60% 就更新 HANDOFF.md\n"
-        "3. 全程用繁體中文；沒做到的誠實說，不要改標準遷就結果\n")
+        "3. 全程用繁體中文；沒做到的誠實說，不要改標準遷就結果\n"
+        "4. 單次 write_file 不要超過 400 行。長檔案分段寫：\n"
+        "   先寫骨架，再一段一段補上去（用 edit 或再一次 write）。\n"
+        "   一次吐 19KB 會撞單次輸出上限被截斷，然後整個卡死不會自己醒。\n"
+        "5. 每次改完程式碼，**貼出編譯器/測試的完整輸出**，並明講錯誤數\n"
+        "   從幾個變成幾個。沒有減少就不要往下做別的 —— 先解決眼前那一個。\n"
+        "   26/08/31 踩過：同一行編譯錯誤改了五輪，每次只換變數名、\n"
+        "   語法從沒動過，因為改完沒去看編譯器實際講什麼。\n"
+        "   編譯器的訊息通常已經把原因講完了。\n"
+        "6. 寫 testbench 時**一開始就加波形輸出**：\n"
+        "     initial begin\n"
+        "         $dumpfile(\"<top>.vcd\");\n"
+        "         $dumpvars(0, <tb_top>);\n"
+        "     end\n"
+        "   然後遇到這幾種問題時，畫成波形圖用視覺看，不要只靠 $display：\n"
+        "     - 訊號是 x/z，要找它「什麼時候該有值卻沒有」\n"
+        "     - 握手不成立（valid 拉了 ready 沒來，或反過來）\n"
+        "     - 跨時脈域、取樣時機對不上\n"
+        "   你有視覺能力（mmproj 已掛）。畫圖的做法和「怎麼問具體問題」\n"
+        "   在 skill embedded/rtl-sim-verification 裡。\n"
+        "   26/08/31 踩過：tb 沒加 $dumpvars，於是只能一輪加幾個 $display\n"
+        "   再跑一次，花了兩小時才把資料路徑打通一半。$display 看不到\n"
+        "   時脈邊緣前後的變化，也看不出多個訊號的時間關係。\n"
+        "7. 改**設計決定**（不是修語法錯）之前，先讀專案裡的改動記錄\n"
+        "   （CHANGELOG_*.md），改完加一行進去：改了什麼、為什麼、結果。\n"
+        "   裡面的「已經確認行不通的做法」那節，是你自己試過並否定的，\n"
+        "   不要再試一次。\n"
+        "   26/09/01 踩過：01:11 改了 ctl_push 的推送時機，01:26 又整個\n"
+        "   改回去 —— 檔案雜湊跟 00:55 完全一樣，半小時白做，而且改回去\n"
+        "   的正是自己剛推翻的做法。\n"
+        "   **你不會記得自己十分鐘前推翻過什麼，所以要寫下來。**\n"
+        "8. 時序／相位對不上時（資料晚一拍、高低 byte 錯位、首筆是 x），\n"
+        "   **不要用推理去猜哪一級多半拍 —— 印出來比對。**\n"
+        "   做法：在 driver（tb）送出的地方和 sampler（RTL）收的地方各加\n"
+        "   一行 $display，都印 $time 和當下的值，然後兩邊逐拍並排看。\n"
+        "   一次只改一級、改完立刻重跑並貼出前 12 筆，看它往哪個方向動。\n"
+        "   26/09/01 踩過：低 byte 修對之後高 byte 還晚一拍，接連猜了\n"
+        "   「push 延後一拍」和「加 loaded 閘門」兩種改法 —— 一個更糟、\n"
+        "   一個完全沒作用，因為都是猜的，沒先把兩邊的相位印出來對。\n"
+        "9. **編譯過不等於跑得起來。** 每次改完都要真的執行一次，貼出結果。\n"
+        "   26/09/02 踩過：用了 $past()（iverilog 不支援），iverilog 回報\n"
+        "   0 error，但 vvp 直接 not runnable —— 模擬完全沒輸出，卻以為\n"
+        "   自己編譯乾淨。系統函式、$system、SystemVerilog 語法都是這樣。\n"
+        "10. **一個訊號不要同時管兩件事。** 一改就顧此失彼、在兩個版本之間\n"
+        "   來回跳，通常就是這個原因 —— 不是你選錯做法，是兩件事被綁在一起。\n"
+        "   26/09/02 踩過：同一個閘門既要「擋掉第一次無效寫入」又要「決定\n"
+        "   計數器的值」，擋得掉就算錯數量、算對數量就擋不掉，來回改了三輪。\n"
+        "   **發現自己在兩個版本之間反覆時，先問：是不是該拆成兩個訊號？**\n"
+        "11. **症狀在下游，不代表 bug 在下游。** 往下游修之前，先確認上游\n"
+        "   送出來的東西是對的 —— 印出上游的實際輸出，不要假設它是對的。\n"
+        "   26/09/02 踩過：讀回來的值一直是 0/x，差點去修讀取路徑，\n"
+        "   但實際上是寫入引擎從沒送出過資料（AXI 寫通道握手 0 次），\n"
+        "   讀取端的輸入本來就是未初始化的值。**在輸入是 x 的路徑上除錯，\n"
+        "   怎麼修都不會對。**\n")
 
     with open(TASK_FILE, "w", encoding="utf-8") as f:
         f.write(prompt)
@@ -189,6 +242,23 @@ def run_new_task(project):
     subprocess.run([sys.executable, AUTORELAY, "--task-file", NEW_TASK_FILE])
 
 
+def _running_chats():
+    """正在跑的 hermes chat 對話 PID 清單（一次對話有兩個行程，只算一個）。"""
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+          "Where-Object { $_.CommandLine -like '*hermes*chat*' } | "
+          "Sort-Object CreationDate | "
+          "Group-Object { $_.CreationDate.ToString('yyyyMMddHHmm') } | "
+          "ForEach-Object { $_.Group[0].ProcessId }")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           timeout=25)
+        return [int(x) for x in r.stdout.decode("utf-8", "replace").split()
+                if x.strip().isdigit()]
+    except Exception:
+        return []    # 查不到就放行，不要因為查詢失敗就卡住派工
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reason", default="unknown",
@@ -198,11 +268,22 @@ def main():
                     help="驗收關卡不通過的理由 —— 會寫進派工提示詞")
     ap.add_argument("--auto", action="store_true",
                     help="不問人，直接照 reason 決定動作")
+    ap.add_argument("--force", action="store_true",
+                    help="已經有對話在跑也照樣派（會搶 slot，兩邊都變慢）")
     args = ap.parse_args()
 
     if args.auto:
         # 全自動：撞上限就接續，正常結束就做下一階段。
         # 防呆在 _autoguard.py，這裡只負責執行。
+        # 但有一道擋在這裡：已經有對話在跑就不准再開。
+        # 26/08/31 手動派工時沒檢查，開出第二個 session 搶走另一個 slot，
+        # 兩邊都慢一半 —— 這是最該避免的事，寧可漏派也不要互搶。
+        busy = _running_chats()
+        if busy and not args.force:
+            out("[自動模式] 已經有 %d 個對話在跑（PID %s）—— 不派工。"
+                % (len(busy), ",".join(str(p) for p in busy)))
+            out("  真的要並行請加 --force；先確認 slot 夠，不然兩邊都會慢。")
+            return
         out("[自動模式] reason=%s project=%s" % (args.reason, args.project))
         if args.gate_reason:
             out("[自動模式] 關卡理由會寫進題目：" + args.gate_reason[:80])
