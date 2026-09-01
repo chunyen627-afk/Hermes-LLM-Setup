@@ -555,3 +555,63 @@ WRSTATE t=694  01->10  hwleft=0    ← 4ns 後就跳到 WR_WAIT
 
 ⛔ 寫入端那四個修正維持不動（WCOMMIT 剛實測仍全對）。
 ⛔ `async_fifo.v` 沒問題，不要查（見 00:30 那節）。
+
+---
+
+## 🎉 00:45 —— 死結解開了！AXI 交易終於發生（規劃者實測）
+
+你把 `wr_data_started` 換成 `pipe_loaded`（改在 negedge 設定），
+**死結解開了**。這是今天最大的突破：
+
+```
+WRSTATE t=690  00->01  hwleft=1    ← hwleft 不再是 0！
+WRSTATE t=706  01->10
+WRSTATE t=710  10->00              ← 完整循環，回到 IDLE ✅
+WRSTATE t=1250 00->01  hwleft=5    ← 第二個 frame 也能啟動
+WRSTATE t=2410 00->01  hwleft=9
+（反覆循環，不再卡死）
+
+AXI DDR aw=13 w=29 b=13 ar=24 r=113     ← 先前全是 0！
+AXI REG aw=4  w=7  b=4  ar=5  r=40
+```
+
+**整條資料通路第一次真正打通了。** `w=29` 表示寫資料通道
+真的送出了 29 個 beat（先前是 0）。
+
+### ⚠ 但寫入端退化了 —— 兩筆垃圾回來了
+
+```
+現在：xx00 ← 垃圾   00ff 01fe 02fd 03fc
+      fc00 ← 垃圾   005a 015b 0258 0359 045e 055f 065c 075d
+
+21:30：           00ff 01fe 02fd 03fc          （乾淨）
+                  005a 015b 0258 0359 ...      （乾淨）
+```
+
+`pipe_loaded` 在 **negedge** 設定，所以第一個 P_DATA **posedge** 時它已經是 1，
+擋不掉那次 stale commit。`wr_data_started` 在 posedge 設定，擋得掉，
+但會讓 `hwleft` 算成 0（因為它同時影響了 `wr_hw_cnt` 的計數）。
+
+### 這兩件事可以同時成立，不要二選一
+
+**關鍵認知**：擋 commit 和算 hwleft 是**兩件不同的事**，
+現在被綁在同一個訊號上，所以顧此失彼。分開處理：
+
+- **擋掉每個 frame 第一次 stale commit** → 需要一個 posedge 就為真的閘門
+- **`wr_hw_cnt` 要數對** → 計數的來源不該被那個閘門影響
+
+自己判斷怎麼拆。一個方向：讓 `w_commit` 用擋得住的閘門，
+而 `wr_hw_cnt` 改成數「真正有效的 commit」（例如用 `pipe_loaded` 版本的條件），
+兩者各用各的。
+
+### 驗收（三個都要對，這是最後一關）
+
+```bash
+/c/iverilog/bin/vvp out/scratch/tb.out | grep -E "WCOMMIT|WRSTATE|^AXI |^CHECK" | head -25
+```
+1. **WCOMMIT 兩組乾淨**：`00ff 01fe 02fd 03fc` / `005a 015b ... 075d`（開頭無垃圾）
+2. **WRSTATE 完整循環**：`00->01->10->00` 反覆（不卡在 10）
+3. **AXI DDR aw > 0**（現在 13，保持住）
+
+三個同時成立，`CHECK data_integrity` 就會開始降。
+**現在是 1 和 2/3 各對一半 —— 把它們合起來就完成了。**
