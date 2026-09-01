@@ -513,9 +513,12 @@ module xspi_slave #(
             pipe_loaded <= 1'b1;
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
-    // Commit is gated on pipe_loaded (not wr_data_started): high from the first
-    // P_DATA posedge onward for any frame that has a data cycle.
-    wire                 w_commit  = hw_push_en && !w_wr_full && pipe_loaded;
+    // Per-posedge commit: suppress the first (stale) P_DATA posedge via
+    // wr_data_started. For a multi-halfword frame this commits exactly the N
+    // valid halfwords at posedges 2..N+1. A 1-halfword frame has only ONE
+    // posedge (the stale one), so it commits nothing here -- its single valid
+    // halfword is flushed at CS deassert instead (see w_flush below).
+    wire                 w_commit  = hw_push_en && !w_wr_full && wr_data_started;
     wire                 w_wr_full;
 
     // TEMP DEBUG: log every committed write halfword (front-end -> FIFO).
