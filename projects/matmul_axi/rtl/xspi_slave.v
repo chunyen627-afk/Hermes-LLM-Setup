@@ -357,6 +357,8 @@ module xspi_slave #(
                             rd_lo_q <= rd_shift_out[7:0];    // lower byte (for fall)
                         end
                         io_oe <= 1'b1;
+                        $display("RCOMMIT t=%0d ph=4 oe=%b shift=%h rempty=%b rden=%b iout=%h",
+                                 $time, io_oe, rd_shift_out, rd_rd_empty, rd_rd_en, io_out);
                     end else begin
                         // write: capture this cycle's upper byte.
                         io_oe <= 1'b0;
@@ -808,6 +810,12 @@ module xspi_slave #(
     // On the consume cycle push the live low halfword; on the following cycle
     // push the latched high halfword.
     assign rd_wr_data = rd_push_phase ? rd_beat_hold[31:16] : rd_mux_data[15:0];
+
+    always @(posedge aclk) begin
+        if (rd_wr_en)
+            $display("RDWR  t=%0d wrdata=%h pushphase=%b consumed=%b state=%b",
+                     $time, rd_wr_data, rd_push_phase, rd_beat_consumed, rd_state);
+    end
 
     // ================= WRITE engine (aclk) =================
     // On a write control word: drain f_len_hw halfwords from the write FIFO,
