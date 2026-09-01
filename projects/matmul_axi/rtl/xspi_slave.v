@@ -613,9 +613,12 @@ module xspi_slave #(
 
     // Push timing: reads at end of P_ADDR (so the fetch starts during the dummy
     // cycles); writes at CS deassert (frame complete, length now known).
+    // Reg reads are NOT pushed: they serve data from mr_read() directly in the
+    // xspi_clk domain and don't use the read FIFO. Pushing them would pollute
+    // the FIFO with stale/xxxx entries that shift subsequent DDR reads.
     always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n)      ctl_push <= 1'b0;
-        else              ctl_push <= (is_read && phase == P_ADDR_D) ||
+        else              ctl_push <= (is_read && !is_reg && phase == P_ADDR_D) ||
                                       (cs_rise && (phase == P_DATA) && !is_read);
     end
 
