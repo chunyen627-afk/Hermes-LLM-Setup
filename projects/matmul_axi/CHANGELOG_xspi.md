@@ -229,3 +229,58 @@ posedge/negedge 取樣相位、或 `rd_shift_out` 高低 byte 的推送時機。
 進 rd FIFO、推上 xspi 線的每一級，看是哪一級開始交替出錯。
 
 ⚠ 先確認 `xxxx` 是在哪一級出現的 —— 那一級就是問題所在。
+
+---
+
+## ✅ 21:30 —— 寫入路徑完成（規劃者實測確認，兩組全對）
+
+```
+00ff 01fe 02fd 03fc                          ← WRITE_VERIFY 四筆，開頭無垃圾 ✅
+005a 015b 0258 0359 045e 055f 065c 075d      ← BURST 八筆，開頭無垃圾 ✅
+```
+
+**你把兩種寫法成功合併了。** 從 08-31 20:37 卡到現在的寫入端問題到此結束。
+
+⛔ **寫入端從現在起不要再動。** 四個修正缺一不可：
+1. `hw_pipe_lo <= xspi_io[7:0]` —— 低 byte 不能讀同邊 NBA 的 `w_lo`
+2. `dummy_cnt <= dummy_n - 2` —— P_DATA 進入時機
+3. negedge 直接 commit `{w_hi, xspi_io}` —— 讓單筆 frame 也對
+4. `wr_data_started` 閘門 —— 丟掉每個 frame 第一次的 stale commit
+
+改動前先跑一次記下這兩組數字，改完比對。**任何一組退化就是改錯了。**
+
+## 現在唯一的問題：讀取路徑
+
+`CHECK` 還是 26 26，但 mismatch 的模式已經完全不同了：
+
+```
+hw 0: got 0000 expected 00ff     ← 偶數：讀回初始值
+hw 1: got xxxx expected 01fe     ← 奇數：根本沒有值
+hw 2: got 0000 expected 00ff
+hw 3: got xxxx expected 01fe
+```
+
+**偶數 halfword 讀回 `0000`、奇數讀回 `xxxx`，規律交替。**
+寫進去的值已經證明是對的（WCOMMIT 全中），所以問題純粹在讀出來這一段。
+
+### 這個交替模式在告訴你什麼
+
+- `xxxx` = 該有值的時候沒有值 → 那一級**根本沒被驅動**
+- `0000` = 讀到初始值 → 那一級**有驅動但資料沒到**
+- 兩者**每兩筆交替一次** → 一個 32-bit beat 裝兩個 halfword，
+  **高半和低半的處理不對稱** —— 一半有接、一半沒接
+
+**這跟寫入端當初的問題是鏡像的**：寫入是「兩個 byte 組成一個 halfword」，
+讀取是「一個 beat 拆成兩個 halfword」。拆的時候高低半搞錯了。
+
+### 下一步（照第 8 條規則）
+
+在讀取路徑加 `RCOMMIT` 逐拍 `$display`（對應寫入端的 `WCOMMIT`），
+把 halfword 從 AXI 讀回 → 進 rd FIFO → 推上 xspi 線的每一級都印出來。
+
+**先確認 `xxxx` 是從哪一級開始出現的** —— 那一級就是問題所在。
+不要從頭猜整條路徑，用印出來的值把範圍縮小，跟你解寫入端時一樣。
+
+參考：`rd_shift_out`、`rd_lo_q`、讀取 FIFO 的推入邏輯（註解說 xSPI DDR
+順序是「for each 32-bit beat [A+3 A+2 A+1 A+0] push {A+1,A+0} then {A+3,A+2}」）
+—— 這個順序有沒有真的照做，值得先確認。
