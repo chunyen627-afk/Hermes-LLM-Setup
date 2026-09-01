@@ -456,12 +456,13 @@ module xspi_slave #(
     // deasserts.
     // Write-data pipeline. The DUT samples the UPPER byte on the rising edge and
     // the LOWER byte on the falling edge of the SAME SCK cycle (TB drives upper at
-    // negedge, lower at posedge). To assemble a halfword from one valid data cycle:
-    //   posedge i : w_hi <= io (upper of hw_i)
-    //   negedge i : w_lo <= io (lower of hw_i)  -- same cycle as the upper
-    //   posedge i+1: push {w_hi, w_lo} = hw_i into the FIFO
-    // The final halfword is pushed on the cycle after the last data cycle, which is
-    // exactly when CS deasserts -- so it is captured before the frame ends.
+    // negedge, lower at posedge). Registers hold:
+    //   w_hi = upper_i  (set at posedge i)
+    //   w_lo = lower_i  (set at negedge i+1)
+    // Both are stable pre-edge at posedge i+1, so loading the pipeline THERE gives
+    // hw_pipe = {upper_i, lower_i} = hw_i. The final halfword is pushed on the cycle
+    // after the last data cycle, which is exactly when CS deasserts -- captured
+    // before the frame ends.
     //
     // hw_push_en must be COMBINATIONAL (not registered): if it were registered it
     // would lag `phase` by one cycle, pushing the first halfword late and the last
@@ -470,17 +471,17 @@ module xspi_slave #(
     // negedge N-1 = hw0, and each subsequent posedge emits the next halfword.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
-    // Load the pipeline at the SAME negedge that samples w_lo, so both bytes of a
-    // halfword come from one valid data cycle. (Loading at posedge used the previous
-    // posedge's w_hi, which during the first data cycle was still the stale/dummy-
-    // phase value -> hw0 dropped, hw1 hi byte X.)
-    always @(negedge xspi_clk or negedge arst_n) begin
+    // Load the pipeline at the posedge where BOTH bytes of a halfword are stable:
+    // w_hi holds upper_i (from this cycle's posedge sample) and w_lo holds lower_i
+    // (from the previous negedge). Reading xspi_io here would give upper_{i+1}
+    // (the bus has already moved on), which is why the naive version mixed bytes.
+    always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
             hw_pipe_lo <= 8'h00;
         end else if ((phase == P_DATA) && !is_read) begin
-            hw_pipe_hi <= w_hi;          // upper byte (sampled this cycle's posedge)
-            hw_pipe_lo <= w_lo;          // lower byte (sampled this negedge)
+            hw_pipe_hi <= w_hi;          // upper byte (sampled this posedge)
+            hw_pipe_lo <= w_lo;          // lower byte (sampled previous negedge)
         end
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
