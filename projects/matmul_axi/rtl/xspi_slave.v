@@ -860,6 +860,14 @@ module xspi_slave #(
                      $time, is_read, is_reg, ctl_len, addr_reg, phase);
     end
 
+    always @(posedge xspi_clk) begin
+        if (phase == P_DATA && is_read)
+            $display("FIFOPTR t=%0d rd_bin=%0d wr_bin=%0d rd_gray=%b wr_gray_sync2=%b rempty=%b rden=%b shift=%h",
+                     $time, u_rdfifo.rd_bin, u_rdfifo.wr_bin,
+                     u_rdfifo.rd_gray, u_rdfifo.wr_gray_sync2,
+                     rd_rd_empty, rd_rd_en, rd_shift_out);
+    end
+
     // ---- debug trace: engine FSM state transitions + consumption ----
     reg rd_state_p;
     reg [1:0] wr_state_p;
