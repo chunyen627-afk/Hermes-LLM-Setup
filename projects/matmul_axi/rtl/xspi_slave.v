@@ -471,16 +471,22 @@ module xspi_slave #(
     // negedge N-1 = hw0, and each subsequent posedge emits the next halfword.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
-    // Load the pipeline at the negedge where BOTH bytes of a halfword are stable and
-    // neither is being updated this edge. (Loading at posedge read w_hi/w_lo via NBA,
-    // which returned the PREVIOUS cycle's values -> one-cycle shift + X first hw.)
+    // Load the pipeline at the negedge where BOTH bytes of halfword i are known:
+    //   upper_i = w_hi register (sampled on the posedge earlier in this cycle,
+    //             still holding its value -- not updated on this negedge)
+    //   lower_i = xspi_io read DIRECTLY from the wire right now.
+    // We must NOT read the w_lo register here: it is being assigned in this same
+    // negedge block (line "w_lo <= xspi_io"), so an NBA read returns its OLD value
+    // (lower_{i-1}), shifting every halfword's low byte back by one. Reading the
+    // wire directly gives lower_i, the byte actually present on the line this edge.
+    // Result: hw_pipe = {upper_i, lower_i} = hw_i, pushed on the following posedge.
     always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
             hw_pipe_lo <= 8'h00;
         end else if ((phase == P_DATA) && !is_read) begin
-            hw_pipe_hi <= w_hi;          // upper byte (stable since this cycle's posedge)
-            hw_pipe_lo <= w_lo;          // lower byte (just sampled this negedge)
+            hw_pipe_hi <= w_hi;               // upper byte (stable since this cycle's posedge)
+            hw_pipe_lo <= xspi_io[7:0];       // lower byte (present on the wire this negedge)
         end
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
