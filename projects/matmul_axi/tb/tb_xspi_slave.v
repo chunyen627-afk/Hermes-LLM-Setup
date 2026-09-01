@@ -732,6 +732,7 @@ module axi4_slave_model #(
                 rd_base_beat <= araddr >> BB_SHIFT;
                 rd_len       <= arlen + 8'd1;
                 rd_rcount    <= 8'd0;
+                $display("AXIAR t=%0t addr=%h basebeat=%0d len=%0d", $time, araddr, araddr>>BB_SHIFT, arlen+8'd1);
             end
             rvalid <= rd_active;
             if (rd_active) begin
@@ -739,6 +740,7 @@ module axi4_slave_model #(
                 rlast <= (rd_rcount == rd_len - 8'd1);
             end
             if (rvalid && rready) begin
+                $display("AXIR t=%0t beat=%0d rcnt=%0d data=%h last=%b", $time, rd_base_beat+rd_rcount, rd_rcount, rdata, rlast);
                 if (rlast) rd_active <= 1'b0;
                 else       rd_rcount <= rd_rcount + 8'd1;
             end
