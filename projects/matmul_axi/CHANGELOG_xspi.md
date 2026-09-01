@@ -284,3 +284,53 @@ hw 3: got xxxx expected 01fe
 參考：`rd_shift_out`、`rd_lo_q`、讀取 FIFO 的推入邏輯（註解說 xSPI DDR
 順序是「for each 32-bit beat [A+3 A+2 A+1 A+0] push {A+1,A+0} then {A+3,A+2}」）
 —— 這個順序有沒有真的照做，值得先確認。
+
+---
+
+## 23:40 —— 兩條線索其實是同一件事（規劃者實測）
+
+你這輪加的 `RCOMMIT` / `RDWR` 追蹤是對的做法。規劃者跑完之後，
+發現你手上的兩條線索**不是兩個問題，是同一個根因的兩面**：
+
+```
+AXIWR 出現次數：0                              ← 寫入引擎從沒發過交易
+RDWR t=450 wrdata=xxxx pushphase=0 ...        ← 讀出來全是 xxxx
+RDWR t=454 wrdata=xxxx pushphase=1 ...
+```
+
+**因果關係**：`AXIWR` 從沒發生 → 資料從沒進 DDR 模型 →
+讀回來當然是未初始化的 `xxxx` / `0000`。
+
+`RDWR` 的 `pushphase` 在 0/1 交替，正好對上 mismatch 的
+`0000` / `xxxx` 交替 —— 那個交替是「讀 FIFO 一次推高半一次推低半」的
+正常行為，**不是 bug**。讀取端的邏輯可能本來就是對的。
+
+### ⚠ 所以不要花時間修讀取端
+
+先把 `AXIWR` 弄出來。寫入交易一旦真的發出去、資料進了 DDR 模型，
+讀取端很可能自動就對了 —— 到時再看還有沒有問題。
+
+**修讀取端之前，先確認寫入端真的有把資料送出去。**
+否則你會在一個「輸入本來就是 x」的路徑上除錯，怎麼修都不會對。
+
+### 這一輪只要回答一個問題
+
+**`wr_state` 為什麼不進 WR_DRAIN？**
+
+```bash
+# 加這個，看狀態機卡在哪一態
+# always @(posedge aclk) if (wr_state != 0)
+#     $display("WRST t=%0t state=%0d hw_left=%0d empty=%b start=%b busy=%b",
+#              $time, wr_state, wr_hw_left, w_rd_empty, ddr_wr_start, ddr_wr_busy);
+```
+
+要查的幾件事（照順序，一次一個）：
+1. `wr_state` 有沒有離開過 IDLE？沒有的話是**觸發條件**沒成立
+2. 觸發它的訊號是什麼（`ctl_push`？CS deassert？）—— 那個訊號有沒有來
+3. `w_rd_empty` 是不是一直是 1 —— 那表示 FIFO 的**跨時脈域指標**沒同步過來
+   （WCOMMIT 證明資料寫進去了，但 aclk 側可能看不到）
+
+第 3 點特別值得先查：寫入端在 `xspi_clk`、讀出端在 `aclk`，
+`async_fifo` 的指標要跨時脈域同步。**寫進去了不等於另一邊看得到。**
+
+⛔ 寫入端那四個修正維持不動（WCOMMIT 23:36 實測仍全對，你沒動它，很好）。
