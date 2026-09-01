@@ -464,37 +464,18 @@ module xspi_slave #(
     // deasserts.
     // Write-data pipeline. The DUT samples the UPPER byte on the rising edge and
     // the LOWER byte on the falling edge of the SAME SCK cycle (TB drives upper at
-    // negedge, lower at posedge). Registers hold:
-    //   w_hi = upper_i  (set at posedge i)
-    //   w_lo = lower_i  (set at negedge i+1)
-    // Both are stable and NOT being updated at the negedge of cycle i+1, so loading
-    // hw_pipe THERE gives hw_pipe = {upper_i, lower_i} = hw_i. The push happens on
-    // the following posedge (i+2), which is when CS deasserts for the last halfword --
-    // captured before the frame ends.
-    //
-    // hw_push_en must be COMBINATIONAL (not registered): if it were registered it
-    // would lag `phase` by one cycle, pushing the first halfword late and the last
-    // after CS deasserts (dropping hw0 and shifting the rest). With it combinational,
-    // the push at posedge N (the first P_DATA posedge) emits hw_pipe loaded at
-    // negedge N-1 = hw0, and each subsequent posedge emits the next halfword.
+    // negedge+1, lower at posedge+1). At each P_DATA NEGEDGE, both bytes of the
+    // current halfword are known:
+    //   upper_i = w_hi register (sampled on the posedge earlier in this cycle)
+    //   lower_i = xspi_io read directly from the wire right now
+    // Commit {w_hi, xspi_io} at the negedge -- no pipeline delay, no stale values.
+    // The first P_DATA negedge has w_hi = 0 (cleared on frame entry), so it
+    // commits {0x00, upper_0}. This is harmless: for multi-hw frames the aclk
+    // engine drains exactly f_len_hw entries and the extra {0x00,upper_0} stays
+    // in the FIFO. For 1-hw frames we need to suppress this first commit so the
+    // real hw_0 (committed at the next negedge) is the only entry.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
-    // The first P_DATA posedge of a frame must NOT push: at that edge hw_pipe
-    // still holds the stale value loaded during the dummy phase (stale w_hi +
-    // last dummy byte). The real first halfword only lands in hw_pipe on the
-    // following negedge. Gate the push with wr_data_started, which is set on the
-    // first P_DATA posedge and held for the rest of the frame -- so exactly one
-    // (stale) push is dropped per frame and every real halfword is kept.
-    reg         wr_data_started;
-    // Load the pipeline at the negedge where BOTH bytes of halfword i are known:
-    //   upper_i = w_hi register (sampled on the posedge earlier in this cycle,
-    //             still holding its value -- not updated on this negedge)
-    //   lower_i = xspi_io read DIRECTLY from the wire right now.
-    // We must NOT read the w_lo register here: it is being assigned in this same
-    // negedge block (line "w_lo <= xspi_io"), so an NBA read returns its OLD value
-    // (lower_{i-1}), shifting every halfword's low byte back by one. Reading the
-    // wire directly gives lower_i, the byte actually present on the line this edge.
-    // Result: hw_pipe = {upper_i, lower_i} = hw_i, pushed on the following posedge.
     always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
@@ -505,13 +486,7 @@ module xspi_slave #(
         end
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
-    // Per-frame gate: 0 on the very first P_DATA posedge (stale hw_pipe), 1 after.
-    always @(posedge xspi_clk or negedge arst_n) begin
-        if (!arst_n)      wr_data_started <= 1'b0;
-        else if (cs_fall) wr_data_started <= 1'b0;   // fresh frame: drop the stale push
-        else if ((phase == P_DATA) && !is_read) wr_data_started <= 1'b1;
-    end
-    wire                 w_commit  = hw_push_en && !w_wr_full && wr_data_started;
+    wire                 w_commit  = hw_push_en && !w_wr_full;
     wire                 w_wr_full;
 
     // TEMP DEBUG: log every committed write halfword (front-end -> FIFO).
