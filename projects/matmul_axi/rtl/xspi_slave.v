@@ -468,14 +468,13 @@ module xspi_slave #(
     // current halfword are known:
     //   upper_i = w_hi register (sampled on the posedge earlier in this cycle)
     //   lower_i = xspi_io read directly from the wire right now
-    // Commit {w_hi, xspi_io} at the negedge -- no pipeline delay, no stale values.
-    // The first P_DATA negedge has w_hi = 0 (cleared on frame entry), so it
-    // commits {0x00, upper_0}. This is harmless: for multi-hw frames the aclk
-    // engine drains exactly f_len_hw entries and the extra {0x00,upper_0} stays
-    // in the FIFO. For 1-hw frames we need to suppress this first commit so the
-    // real hw_0 (committed at the next negedge) is the only entry.
+    // hw_pipe captures {w_hi, xspi_io} at each P_DATA negedge. The FIFO write
+    // happens on the following P_DATA posedge, so the FIRST P_DATA posedge emits
+    // a stale pipe value (loaded before w_hi was valid). We suppress it with
+    // wr_data_started: 0 on the first P_DATA posedge, 1 thereafter.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
+    reg         wr_data_started;
     always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
@@ -484,6 +483,15 @@ module xspi_slave #(
             hw_pipe_hi <= w_hi;               // upper byte (stable since this cycle's posedge)
             hw_pipe_lo <= xspi_io[7:0];       // lower byte (present on the wire this negedge)
         end
+    end
+    // Set wr_data_started on the second P_DATA edge (first valid pipe value).
+    always @(posedge xspi_clk or negedge arst_n) begin
+        if (!arst_n)
+            wr_data_started <= 1'b0;
+        else if (cs_fall)
+            wr_data_started <= 1'b0;          // reset on new frame
+        else if ((phase == P_DATA) && !is_read)
+            wr_data_started <= 1'b1;          // high after first P_DATA posedge
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
     wire                 w_commit  = hw_push_en && !w_wr_full;
