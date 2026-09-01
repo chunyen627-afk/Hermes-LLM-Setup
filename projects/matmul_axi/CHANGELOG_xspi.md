@@ -181,3 +181,51 @@ fc00              ← 多出來的前置垃圾（唯一剩下的問題）
 ```
 **`fc00` 那筆要消失，`005a` 變成 BURST 的第一筆。**
 那八筆乾淨了，`CHECK data_integrity` 就會降。
+
+---
+
+## 18:10 —— 寫入端完成 ✅ 問題已轉移到讀取端（規劃者驗證）
+
+`wr_data_started` 閘門接上了（510-514 行都有驅動，不是只有宣告）。
+**實測 WCOMMIT：`fc00` 消失，BURST 八筆完全乾淨**
+
+```
+005a 015b 0258 0359 045e 055f 065c 075d   ← 全中 ✅
+```
+
+**寫入路徑到此完成。** 從 08-31 20:37 卡到現在的「寫進去的值沒到達」，
+到這裡真的解決了。三個修正合起來才成立，缺一不可：
+1. `hw_pipe_lo <= xspi_io[7:0]`（低 byte 不能讀同邊 NBA 的 w_lo）
+2. `dummy_cnt <= dummy_n - 2`（P_DATA 進入時機）
+3. `wr_data_started` 閘門（丟掉相位切換後的第一次 stale push）
+
+### 但 CHECK 還是 26 26 —— 因為問題轉移了
+
+現在的 mismatch 長這樣：
+
+```
+WRITE_VERIFY hw 0: got 0000 expected 00ff
+WRITE_VERIFY hw 1: got xxxx expected 01fe     ← 注意是 xxxx
+BURST hw 0: got 0000 expected 005a
+BURST hw 1: got xxxx expected 015b
+BURST hw 2: got 0000 expected 0258
+BURST hw 3: got xxxx expected 0359
+```
+
+**偶數 halfword 讀回 `0000`、奇數讀回 `xxxx`，規律地交替。**
+
+寫進去的值已經確定是對的（WCOMMIT 證明了），所以這是**讀取路徑**的問題，
+不要再回頭動寫入端 —— ⛔ 上面那三個修正都不要改掉。
+
+`xxxx` 代表「該有值的時候沒有值」，`0000` 代表「讀到初始值」，
+兩者規律交替 = 讀取通道的 halfword 組裝每兩筆錯一次。
+**這跟寫入端當初的症狀是鏡像的**，成因很可能同一類：
+posedge/negedge 取樣相位、或 `rd_shift_out` 高低 byte 的推送時機。
+
+### 下一步
+
+照第 8 條規則：在讀取路徑加 `RCOMMIT` 之類的逐拍 `$display`
+（對應寫入端的 `WCOMMIT`），印出每個 halfword 從 AXI 讀回來、
+進 rd FIFO、推上 xspi 線的每一級，看是哪一級開始交替出錯。
+
+⚠ 先確認 `xxxx` 是在哪一級出現的 —— 那一級就是問題所在。
