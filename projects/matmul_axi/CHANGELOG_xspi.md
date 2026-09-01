@@ -783,3 +783,68 @@ Acceptance (three must hold together):
 - WCOMMIT: test2 = `00ff 01fe 02fd 03fc`, test4 burst = 8 clean values, MR4 = 1 value.
 - WRSTATE cycles `00->01->10->00` repeatedly (not stuck in `10`).
 - AXI DDR aw>0 and CHECK data_integrity drops well below 26/26.
+
+---
+
+## ✅ 01:20 —— 拆訊號成功！寫入路徑從頭到尾全通了
+
+**你拆對了。** 先前互斥的兩件事現在同時成立：
+
+```
+AXI DDR aw=13 w=17 b=13    ← 死結解除 ✅
+前置垃圾筆數=0              ← 垃圾也擋掉了 ✅
+```
+
+（21:30 / 00:45 / 01:10 三次都只能二選一，這是第一次兩個都對。）
+
+### 資料真的寫進 DDR 模型了，而且完全正確
+
+```
+AXIWR beat=0  addr=00000000 data=01fe00ff   ← 00ff+01fe 打包成 32-bit beat ✅
+AXIWR beat=1  addr=00000000 data=03fc02fd   ✅
+AXIWR beat=64 addr=00000100 data=015b005a   ← 005a+015b ✅
+AXIWR beat=65 addr=00000100 data=03590258   ✅
+AXIWR beat=66 addr=00000100 data=055f045e   ✅
+AXIWR beat=67 addr=00000100 data=075d065c   ✅
+```
+
+**halfword 組裝 → 打包成 beat → 位址解碼 → 寫進記憶體，整條鏈全部正確。**
+從 08-31 20:37 開始的寫入端問題到這裡真正結束。
+
+⛔ **寫入路徑從現在起完全凍結。** 改任何一行之前先跑一次記下這三個數字，
+改完比對，退化就立刻回退。
+
+## 現在剩下讀取路徑（這次是真的）
+
+```
+WRITE_VERIFY hw 0: got 0000 expected 00ff
+WRITE_VERIFY hw 1: got xxxx expected 01fe
+```
+
+**跟先前不同**：以前讀回 0/x 是因為**根本沒東西被寫進去**（輸入是 x，
+怎麼修都不會對）。現在 DDR 模型裡確實有正確的資料，是**讀出來的路徑**
+把它弄丟了。這次修讀取端是對的方向。
+
+### 從哪裡查
+
+`ar=24 r=113` —— 讀取交易有發生，資料有回來。所以問題在
+「AXI 讀回的 beat → 拆成兩個 halfword → 進 rd FIFO → 推上 xspi 線」
+這一段的某一級。
+
+照第 8 條規則，用你已經加好的 `RDWR` / `RCOMMIT` 追蹤：
+```bash
+/c/iverilog/bin/vvp out/scratch/tb.out | grep -E "RDWR|RCOMMIT" | head -12
+```
+**先確認 `RDWR` 推進 rd FIFO 的值對不對** —— 如果那裡已經是 `xxxx`，
+問題在「beat 拆 halfword」；如果那裡是對的，問題在更下游（推上線的時候）。
+
+⚠ 一次只查一級，跟你解寫入端一樣。那套方法有效，繼續用。
+
+### 驗收
+
+```bash
+/c/iverilog/bin/vvp out/scratch/tb.out | grep -E "WCOMMIT|^AXI |^CHECK" | head -16
+```
+1. WCOMMIT 兩組維持乾淨（**退化就回退**）
+2. `AXI DDR aw=13` 維持
+3. `CHECK data_integrity` 開始降 ← 現在只剩這個

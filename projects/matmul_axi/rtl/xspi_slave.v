@@ -920,7 +920,12 @@ module xspi_slave #(
 
             case (wr_state)
             WR_IDLE: begin
-                if (f_valid && !f_is_read) begin
+                // Skip zero-length writes: nothing to drain, and issuing wr_start
+                // would tell the master "1 beat coming" that never arrives -> it
+                // waits in WR_WAIT forever (no W beats -> no wr_done), wedging the
+                // shared engine and blocking every later frame. A len=0 word has
+                // no data; just let ctl_rd_en pop it and stay in WR_IDLE.
+                if (f_valid && !f_is_read && f_len_hw != 16'd0) begin
                     // latch the frame, issue wr_start once, begin draining
                     wr_state      <= WR_DRAIN;
                     wr_target_reg <= f_is_reg_region;
