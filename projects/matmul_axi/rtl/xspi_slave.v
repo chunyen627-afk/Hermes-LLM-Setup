@@ -318,7 +318,15 @@ module xspi_slave #(
                     // and move on. (Frame cannot end here -- the host holds CS
                     // low through the whole frame.)
                     addr_reg  <= {addr_b3, addr_b2, addr_b1, addr_b0};
-                    dummy_cnt <= dummy_n;
+                    // The master drives each byte one falling edge before its
+                    // sampling rising edge, so by the time we reach P_DUMMY the
+                    // DUT has already "used up" two posedges of the address/dummy
+                    // boundary (byte0 sample + this assemble cycle). To line up
+                    // P_DATA with the first data byte on the wire, count down from
+                    // dummy_n-2 (transition after 3 posedges) instead of dummy_n.
+                    // Calibrated against tb drive_frame: upper_0 must be sampled
+                    // at the FIRST P_DATA posedge.
+                    dummy_cnt <= (dummy_n >= 8'd2) ? (dummy_n - 8'd2) : 8'd0;
                     // Use dummy_n (the just-decoded value) for the phase decision,
                     // NOT dummy_cnt (which is still the old value due to non-blocking).
                     phase     <= (dummy_n != 8'd0) ? P_DUMMY : P_DATA;
