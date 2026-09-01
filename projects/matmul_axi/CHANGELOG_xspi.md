@@ -395,3 +395,57 @@ DBG t=430000 ... wr_state=0 w_rd_empty=1 wr_hw_left=0 ...
 **先跑一次 `tb_async_fifo` 看它測了什麼**，再決定改哪邊。
 
 ⛔ 寫入端那四個修正維持不動（WCOMMIT 23:57 實測仍全對）。
+
+---
+
+## 00:20 —— 範圍再縮小：控制字有進來，但 DDR 寫入引擎只啟動過一次
+
+你加的 `CTLPUSH` / `WRSTART` 追蹤又往前推了一步。規劃者實測：
+
+```
+CTLPUSH t=654     isread=0 isreg=1 len=0 addr=00000004   ← REG
+CTLPUSH t=81174   isread=0 isreg=0 len=4 addr=90010000   ← DDR
+CTLPUSH t=322274  isread=0 isreg=0 len=8 addr=90010100   ← DDR
+CTLPUSH t=483514  isread=0 isreg=0 len=1 addr=90010200   ← DDR
+CTLPUSH t=1524694 isread=0 isreg=0 len=2 addr=90010500   ← DDR
+（還有更多，位址和長度都正確）
+
+WRSTART t=690 reg=1 ddr=0 isread=0 faddr=00000004 len=4  ← 只有這一次！
+```
+
+### 三個關鍵事實
+
+1. **控制字全部有正確推進來** —— `len` 和 `addr` 都對，前端沒問題
+2. **`WRSTART` 只發生過 1 次**，而且是 `reg=1`（REG 通道）
+3. **所有 DDR 寫入（`isreg=0`）從沒觸發過 `wr_start`** —— 對應 `AXI DDR aw=0`
+
+### 所以問題在「控制字進來之後、wr_start 發出之前」這一段
+
+兩個可能，**先分辨是哪一個**（不要同時改）：
+
+**(A) `w_rd_empty` 恆為 1（CDC 指標沒同步）** ← 我 00:00 那節的假設
+狀態機看到 FIFO 是空的，即使控制字來了也不啟動。
+
+**(B) 狀態機第一次之後沒回到 IDLE**
+t=690 那次啟動後卡在某個狀態，之後的控制字全被忽略。
+
+**怎麼分辨**（一行就夠）：
+```verilog
+always @(posedge aclk) if (ctl_rd_en || wr_state != 0)
+    $display("WFSM t=%0d wr_state=%0d w_rd_empty=%b wr_hw_left=%0d ctl_len=%0d",
+             $time, wr_state, w_rd_empty, wr_hw_left, ctl_len);
+```
+- 如果 `wr_state` 一直是 0 且 `w_rd_empty` 一直是 1 → **是 (A)**，去查 `async_fifo.v`
+- 如果 `wr_state` 卡在非 0 的某個值 → **是 (B)**，去查狀態機的離開條件
+
+### ⚠ 另外注意兩件事（先記下來，不要現在改）
+
+1. **`ctl_push` 連發 4-5 個 aclk 週期**（t=394,398,402,406,410）
+   它應該是單週期脈衝。可能造成控制 FIFO 塞進重複的項目。
+2. **第一筆 REG 的 `len=0`**（t=654），但 WRSTART 顯示 `len=4`。
+   長度換算某處不一致。
+
+這兩個都是真問題，但**先解決「DDR 引擎完全不啟動」**——
+那個解了，這兩個的影響才看得出來。⛔ 一次只解一個。
+
+⛔ 寫入端那四個修正維持不動（WCOMMIT 00:17 實測仍全對）。

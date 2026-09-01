@@ -830,6 +830,19 @@ module xspi_slave #(
                      $time, is_read, is_reg, ctl_len, addr_reg, phase);
     end
 
+    // ---- debug trace: engine FSM state transitions + consumption ----
+    always @(posedge aclk) begin
+        if (rd_state !== $past(rd_state))
+            $display("RDSTATE t=%0d %b->%b targetreg=%b beatcnt=%0d total=%0d pushph=%b fvalid=%b isread=%b",
+                     $time, $past(rd_state), rd_state, rd_target_reg, rd_beat_cnt, rd_total_beats, rd_push_phase, f_valid, f_is_read);
+        if (wr_state !== $past(wr_state))
+            $display("WRSTATE t=%0d %b->%b targetreg=%b hwleft=%0d hwpb=%0d beatvalid=%b fvalid=%b isread=%b",
+                     $time, $past(wr_state), wr_state, wr_target_reg, wr_hw_left, wr_hwpb, wr_beat_valid, f_valid, f_is_read);
+        if (rd_beat_consumed)
+            $display("RDCONS t=%0d targetreg=%b beatcnt=%0d total=%0d muxdata=%h",
+                     $time, rd_target_reg, rd_beat_cnt, rd_total_beats, rd_mux_data);
+    end
+
     // ================= WRITE engine (aclk) =================
     // On a write control word: drain f_len_hw halfwords from the write FIFO,
     // pack them into beats (low-address halfword first), and stream them to the
