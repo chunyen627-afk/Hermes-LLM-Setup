@@ -893,3 +893,57 @@ WRITE_VERIFY hw 1: got 00ff expected 01fe    ← 注意！不是 xxxx 也不是 
 | 讀取：DDR → beat → halfword → xspi 線 | ⏳ 有資料了，但晚一格 |
 
 **剩下 25 筆，而且症狀是你解過的型態。**
+
+---
+
+## ⛔ 07:40 —— 你截斷前的結論錯了：問題**不在**寫入路徑
+
+你在被截斷前推導出：
+
+> Wait — this is WRITE_VERIFY, not READ_VERIFY! ... So the issue is in
+> the WRITE path, not the read path!
+
+**這個結論是錯的。** 規劃者已經實測證明寫入路徑完全正確：
+
+```
+AXIWR beat=0  addr=00000000 data=01fe00ff   ← 00ff+01fe 正確打包並寫進 DDR 模型
+AXIWR beat=1  addr=00000000 data=03fc02fd   ✅
+AXIWR beat=64 addr=00000100 data=015b005a   ✅
+```
+
+**資料確實正確地存進了 `mem[]`。** `WRITE_VERIFY` 這個名字會誤導 ——
+它雖然叫 write verify，但**驗證的動作本身是「讀回來比對」**，
+所以讀不對一樣會 fail。⚠ **不要被測試的名字帶著走，看它實際做什麼。**
+
+### 但你注意到的另一件事有價值，繼續查那個
+
+> the write is 4 halfwords (n_hw=4) but the read-back is only 2 halfwords
+> (n_hw=2). And the verification checks data[8+i]
+
+這個觀察是對的。**去確認 `data[]` 的索引對不對** ——
+`drive_frame` 的 `base` 參數怎麼對應到 `data[]` 的位置，
+讀回來的值被存到哪一格，驗證又檢查哪一格。
+
+### 目前確定的事實（不要再重新推導）
+
+| 路徑 | 狀態 | 證據 |
+|---|---|---|
+| xspi 前端組 halfword | ✅ 正確 | WCOMMIT 兩組全對、無垃圾 |
+| 打包成 32-bit beat | ✅ 正確 | `AXIWR data=01fe00ff` |
+| 寫進 DDR 模型 | ✅ 正確 | `aw=13 w=17 b=13` |
+| **讀回來 → 比對** | ❌ **問題在這** | `hw 1: got 00ff expected 01fe` |
+
+`got 00ff` 那個值**正是 hw 0 的期望值** —— 讀回來的東西晚了一格。
+可能是讀取鏈偏移，也可能是 tb 存進 `data[]` 的索引錯位。
+**你剛注意到的 `data[8+i]` 就是查這個的入口。**
+
+### ⚠ ctx 管理（這是第二次撞同一個牆）
+
+這輪跑了 9.2 小時、ctx 撐滿才被截斷。上一輪也是（7.3 小時）。
+
+**下一輪請這樣做**：
+- 不要重讀整份 CHANGELOG，只讀最後三節
+- 不要用長篇推理去「想」訊號的值 —— **印出來看**（第 8 條規則）
+  你這次花了大段 ctx 在手推 `rd_lo_q` 在各個 edge 的值，
+  那個用一行 `$display` 就有答案，而且不會推錯
+- ctx 到 60% 就把進度寫進 CHANGELOG
