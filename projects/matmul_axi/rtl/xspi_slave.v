@@ -454,19 +454,33 @@ module xspi_slave #(
     // emits hw_pipe which was loaded at negedge N-1 = hw0, and each subsequent
     // posedge emits the next halfword, with the last one landing just before CS
     // deasserts.
+    // Write-data pipeline. The DUT samples the UPPER byte on the rising edge and
+    // the LOWER byte on the falling edge of the SAME SCK cycle (TB drives upper at
+    // negedge, lower at posedge). To assemble a halfword from one valid data cycle:
+    //   posedge i : w_hi <= io (upper of hw_i)
+    //   negedge i : w_lo <= io (lower of hw_i)  -- same cycle as the upper
+    //   posedge i+1: push {w_hi, w_lo} = hw_i into the FIFO
+    // The final halfword is pushed on the cycle after the last data cycle, which is
+    // exactly when CS deasserts -- so it is captured before the frame ends.
+    //
+    // hw_push_en must be COMBINATIONAL (not registered): if it were registered it
+    // would lag `phase` by one cycle, pushing the first halfword late and the last
+    // after CS deasserts (dropping hw0 and shifting the rest). With it combinational,
+    // the push at posedge N (the first P_DATA posedge) emits hw_pipe loaded at
+    // negedge N-1 = hw0, and each subsequent posedge emits the next halfword.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
-    // Load the pipeline at the SAME posedge that samples w_hi, so both bytes of a
-    // halfword come from one valid data cycle. (Loading at negedge used the
-    // previous posedge's w_hi, which during the first data cycle was still the
-    // stale/dummy-phase value -> hw0 dropped, hw1 hi byte X.)
-    always @(posedge xspi_clk or negedge arst_n) begin
+    // Load the pipeline at the SAME negedge that samples w_lo, so both bytes of a
+    // halfword come from one valid data cycle. (Loading at posedge used the previous
+    // posedge's w_hi, which during the first data cycle was still the stale/dummy-
+    // phase value -> hw0 dropped, hw1 hi byte X.)
+    always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
             hw_pipe_hi <= 8'h00;
             hw_pipe_lo <= 8'h00;
         end else if ((phase == P_DATA) && !is_read) begin
-            hw_pipe_hi <= w_hi;          // upper byte (sampled this posedge)
-            hw_pipe_lo <= xspi_io[7:0];  // lower byte (on the bus now)
+            hw_pipe_hi <= w_hi;          // upper byte (sampled this cycle's posedge)
+            hw_pipe_lo <= w_lo;          // lower byte (sampled this negedge)
         end
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
@@ -557,7 +571,10 @@ module xspi_slave #(
     reg [15:0] f_len_hw;                 // halfwords in this frame
     reg        f_valid;                  // a latched control word is pending for the engines
     wire       f_is_reg_region = (f_addr < DDR_BASE);   // reg region is below DDR_BASE
-    wire [31:0] f_target_addr  = f_is_reg_region ? f_addr : (f_addr - REG_BASE + DDR_BASE);
+    // SPEC §5: the host address IS the target address. The reg region maps to
+    // matmul_top.s_axi_* and the DDR region maps to MIG DDR4, both at their own
+    // base (0x9000_0000 / 0x9001_0000). No remap: pass f_addr through verbatim.
+    wire [31:0] f_target_addr  = f_addr;
 
     // Latch the control word into frame state when the FIFO has data. The latched
     // f_* values only become valid one cycle after the latch, so f_valid is set on
