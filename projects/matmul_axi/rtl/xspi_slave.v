@@ -831,13 +831,17 @@ module xspi_slave #(
     end
 
     // ---- debug trace: engine FSM state transitions + consumption ----
+    reg rd_state_p;
+    reg [1:0] wr_state_p;
     always @(posedge aclk) begin
-        if (rd_state !== $past(rd_state))
+        if (rd_state !== rd_state_p)
             $display("RDSTATE t=%0d %b->%b targetreg=%b beatcnt=%0d total=%0d pushph=%b fvalid=%b isread=%b",
-                     $time, $past(rd_state), rd_state, rd_target_reg, rd_beat_cnt, rd_total_beats, rd_push_phase, f_valid, f_is_read);
-        if (wr_state !== $past(wr_state))
+                     $time, rd_state_p, rd_state, rd_target_reg, rd_beat_cnt, rd_total_beats, rd_push_phase, f_valid, f_is_read);
+        if (wr_state !== wr_state_p)
             $display("WRSTATE t=%0d %b->%b targetreg=%b hwleft=%0d hwpb=%0d beatvalid=%b fvalid=%b isread=%b",
-                     $time, $past(wr_state), wr_state, wr_target_reg, wr_hw_left, wr_hwpb, wr_beat_valid, f_valid, f_is_read);
+                     $time, wr_state_p, wr_state, wr_target_reg, wr_hw_left, wr_hwpb, wr_beat_valid, f_valid, f_is_read);
+        rd_state_p <= rd_state;
+        wr_state_p <= wr_state;
         if (rd_beat_consumed)
             $display("RDCONS t=%0d targetreg=%b beatcnt=%0d total=%0d muxdata=%h",
                      $time, rd_target_reg, rd_beat_cnt, rd_total_beats, rd_mux_data);
