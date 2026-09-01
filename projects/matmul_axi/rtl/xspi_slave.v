@@ -494,7 +494,8 @@ module xspi_slave #(
             wr_data_started <= 1'b1;          // high after first P_DATA posedge
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
-    wire                 w_commit  = hw_push_en && !w_wr_full;
+    // wr_data_started gates the first P_DATA posedge (stale pipe from before frame).
+    wire                 w_commit  = hw_push_en && !w_wr_full && wr_data_started;
     wire                 w_wr_full;
 
     // TEMP DEBUG: log every committed write halfword (front-end -> FIFO).
