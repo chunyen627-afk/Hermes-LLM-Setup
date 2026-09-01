@@ -658,3 +658,67 @@ AXI REG aw=4  w=7  b=4  ar=5  r=40
 1. WCOMMIT 兩組開頭無垃圾：`00ff 01fe 02fd 03fc` / `005a 015b ... 075d`
 2. `AXI DDR aw` > 0（現在 13，要保持）
 3. `CHECK data_integrity` 開始降
+
+---
+
+## ⛔ 01:13 —— 你又跳回去了，這是第四次。停下來拆訊號
+
+規劃者實測（01:10）：
+
+```
+AXI DDR aw=0 w=0 b=0 ar=0 r=0     ← 死結回來了（00:45 曾經是 aw=13 w=29）
+前置垃圾筆數=0                      ← 垃圾擋掉了
+```
+
+你把 `w_commit` 的閘門從 `pipe_loaded` 換回 `wr_data_started`。
+**這是今天第四次在這兩個版本之間跳。**
+
+| 時間 | 用哪個 | 垃圾 | AXI 交易 |
+|---|---|---|---|
+| 21:30 | `wr_data_started` | ✅ 無 | ❌ 死結 |
+| 00:45 | `pipe_loaded` | ❌ 有 2 筆 | ✅ aw=13 w=29 |
+| 01:10 | `wr_data_started` | ✅ 無 | ❌ 死結 |
+
+**每次都只對一半。這不是因為你選錯，是因為兩件事綁在同一個訊號上。**
+
+### 你現在要加的 `w_flush` 是第三個補丁，不是解法
+
+註解裡寫「1-halfword frame ... flushed at CS deassert instead (see w_flush)」——
+那是在同一個訊號上再疊一層特例。**再疊下去只會更難推理。**
+
+### 真正要做的（拆成兩個獨立訊號）
+
+現在 `wr_data_started` 同時決定了兩件事：
+
+1. **`w_commit` 要不要放行** —— 需要 posedge 就為真，才擋得掉第一次 stale
+2. **`wr_hw_cnt` 數到多少** —— 決定 `f_len_hw`，決定 `wr_hw_left`
+
+用 posedge 版本：(1) 對，(2) 少數一筆 → `hwleft=0` → 死結
+用 negedge 版本：(2) 對，(1) 失效 → 垃圾筆
+
+**做法：兩個訊號各自負責一件事。**
+
+```verilog
+// (1) 擋 commit：posedge 設定，擋得掉第一次 stale commit
+reg commit_armed;      // 你自己命名
+always @(posedge xspi_clk ...) ...
+
+// (2) 數 halfword：不受 (1) 影響，數「真正有效的 halfword」
+//     可以用 negedge 的 pipe_loaded 條件，或直接數 P_DATA 的資料週期數
+reg [15:0] wr_hw_cnt;  // 已存在，改它的計數來源
+always @(negedge xspi_clk ...) ...
+```
+
+⚠ **不要再用第三個訊號去補特例。** 如果拆完還是只對一半，
+代表拆得不對 —— 回來看是哪兩件事還黏在一起，不要加補丁。
+
+### 驗收（三個同時成立才算完成）
+
+```bash
+/c/iverilog/bin/vvp out/scratch/tb.out | grep -E "WCOMMIT|^AXI |^CHECK" | head -16
+```
+1. WCOMMIT 兩組開頭無垃圾（`00ff 01fe 02fd 03fc` / `005a 015b ... 075d`）
+2. `AXI DDR aw` > 0
+3. `CHECK data_integrity` 開始降
+
+**1 和 2 現在是互斥的 —— 拆開之後就不互斥了。這就是全部的問題。**
