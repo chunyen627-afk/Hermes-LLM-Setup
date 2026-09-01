@@ -36,9 +36,17 @@ if command -v /c/iverilog/bin/iverilog >/dev/null 2>&1; then
     ERRS=$(/c/iverilog/bin/iverilog -o /tmp/_sync.out -g2012 -s tb_xspi_slave \
            tb/tb_xspi_slave.v rtl/*.v 2>&1 | grep -c error)
     if [ "$ERRS" = "0" ]; then
-        SIM=$(cd /tmp && timeout 90 /c/iverilog/bin/vvp /tmp/_sync.out 2>&1 \
-              | grep -E "^CHECK data_integrity" | tail -1)
-        STATUS="compiles clean; ${SIM:-no data_integrity line}"
+        # 編譯 0 error 不代表跑得起來：$past 之類 iverilog 不支援的系統函式
+        # 是在 vvp 執行階段才失敗的。要分開報，不然 commit 訊息會誤導。
+        RUN=$(cd /tmp && timeout 90 /c/iverilog/bin/vvp /tmp/_sync.out 2>&1)
+        RUNERR=$(echo "$RUN" | grep -cE "not runnable|Error: System task")
+        SIM=$(echo "$RUN" | grep -E "^CHECK data_integrity" | tail -1)
+        if [ "$RUNERR" != "0" ]; then
+            BAD=$(echo "$RUN" | grep -oE '\$[a-z_]+\(\)' | sort -u | tr '\n' ' ')
+            STATUS="RUNTIME FAILURE - sim will not run (${BAD:-see log})"
+        else
+            STATUS="compiles clean; ${SIM:-no data_integrity line}"
+        fi
     else
         STATUS="$ERRS compile errors"
     fi
