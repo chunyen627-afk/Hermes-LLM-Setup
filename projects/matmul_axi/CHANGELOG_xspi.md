@@ -721,4 +721,65 @@ always @(negedge xspi_clk ...) ...
 2. `AXI DDR aw` > 0
 3. `CHECK data_integrity` 開始降
 
-**1 和 2 現在是互斥的 —— 拆開之後就不互斥了。這就是全部的問題。**
+**1 和 2 現在互斥 —— 拆開之後就不互斥了。這就是全部的問題。**
+
+---
+
+## 🔬 09-01 (this round) — root cause pinned by edge trace, not guesswork
+
+### What the WPIPE/PH edge trace actually shows (ground truth from VCD/$display)
+
+An N-halfword **write** frame's P_DATA posedge count is NOT fixed at N+1.
+It depends on `n_dummy` (the registered `phase` lags the wire by one cycle, so
+how many posedges land while `phase==P_DATA` varies):
+
+| frame | n_hw | n_dummy | P_DATA **POS** edges | first edge pipe | valid commits |
+|---|---|---|---|---|---|
+| test2 DDR write | 4 | 4 | **5** | `{xx,00}` stale | 4 ✓ (posedges 2..5) |
+| test4 burst | 8 | 4 | 9 | stale | 8 ✓ |
+| MR4 reg write | 1 | **0** | **1** | `{xx,xx}` stale | **0 ✗** |
+
+- The FIFO write clock is `xspi_clk` (posedge), so a commit MUST happen on a
+  posedge. At posedge k, `hw_pipe` holds the halfword loaded at negedge k-1.
+  Hence the first P_DATA posedge always emits a **stale** pipe value; the valid
+  N halfwords land at posedges 2..N+1 — but only if N+1 posedges exist.
+- The MR4 frame (n_hw=1, n_dummy=0) has exactly **one** P_DATA posedge, and it
+  is the stale one → `wr_data_started` suppresses it → **0 commits** → the
+  control word pushed at CS deassert carries `len=0`.
+
+### The wedge (why ALL 26 fail, not just MR4)
+
+The aclk write FSM (`wr_state`) is **shared** between reg and DDR. On the MR4
+`len=0` control word it enters `WR_DRAIN` with `wr_hw_left=0`, drains nothing,
+issues `reg_wr_start` (telling the master "1 beat coming"), then moves to
+`WR_WAIT` where its only exit is `reg_wr_done`. But 0 W beats were sent → the
+master never completes → **no `wr_done` ever** → FSM stuck in `WR_WAIT` forever.
+Since there is one shared CTL FIFO with a single `f_valid`, the stuck head blocks
+every later frame:
+
+```
+AXI DDR aw=0 w=0 b=0 ar=0 r=0     ← no DDR transaction ever issued
+AXI REG aw=1 w=0 b=0 ar=2 r=16    ← MR4 AW issued, 0 W beats, no B response
+CHECK data_integrity 26 26         ← every read returns 0000 (never written)
+```
+
+### The fix (two independent changes, verified separately)
+
+1. **aclk write engine: skip `len=0` writes.** In `WR_IDLE`, only start when
+   `f_valid && !f_is_read && f_len_hw != 0`. A zero-length frame has nothing to
+   write; issue no `wr_start`, stay in `WR_IDLE`, and let `ctl_rd_en` pop it.
+   This removes the wedge — the direct cause of all-26 failing.
+2. **front-end: make an N=1 write commit its 1 halfword.** Split the two jobs
+   that were bound to one signal (per the 01:13 diagnosis):
+   - `w_commit` gate keeps `wr_data_started` (posedge-set) so it still blocks the
+     first stale posedge for multi-hw frames.
+   - add a **CS-deassert flush**: on the P_DATA→(deassert) boundary, if the frame
+     had data but committed fewer halfwords than were driven, commit the final
+     `hw_pipe` value once. This gives N=1 its single valid halfword without
+     re-introducing a stale commit for N≥2 (which already commit all N at
+     posedges 2..N+1).
+
+Acceptance (three must hold together):
+- WCOMMIT: test2 = `00ff 01fe 02fd 03fc`, test4 burst = 8 clean values, MR4 = 1 value.
+- WRSTATE cycles `00->01->10->00` repeatedly (not stuck in `10`).
+- AXI DDR aw>0 and CHECK data_integrity drops well below 26/26.
