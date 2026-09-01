@@ -493,6 +493,18 @@ module xspi_slave #(
             $display("WCOMMIT t=%0t addr=%h hw=%h", $time, addr_reg, {hw_pipe_hi, hw_pipe_lo});
     end
 
+    // TEMP DEBUG: full per-edge trace of the write pipeline (P_DATA only).
+    always @(posedge xspi_clk) begin
+        if ((phase == P_DATA) && !is_read)
+            $display("WPIPE t=%0t POS io=%h w_hi=%h w_lo=%h pipe={%h,%h} push=%b",
+                $time, xspi_io, w_hi, w_lo, hw_pipe_hi, hw_pipe_lo, hw_push_en);
+    end
+    always @(negedge xspi_clk) begin
+        if ((phase == P_DATA) && !is_read)
+            $display("WPIPE t=%0t NEG io=%h w_hi=%h w_lo=%h pipe={%h,%h} push=%b",
+                $time, xspi_io, w_hi, w_lo, hw_pipe_hi, hw_pipe_lo, hw_push_en);
+    end
+
     // Number of halfwords actually committed to the write FIFO this frame.
     // Counting w_commit (not posedges) is exact: each committed halfword is one
     // FIFO entry, so the count equals the frame's data length with no off-by-one
