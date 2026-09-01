@@ -838,6 +838,15 @@ module xspi_slave #(
                      $time, rd_wr_data, rd_push_phase, rd_beat_consumed, rd_state);
     end
 
+    // ---- debug trace: read-FIFO pointer sync (aclk side) ----
+    always @(posedge aclk) begin
+        if (rd_wr_en || rd_rd_en)
+            $display("RDFIFO t=%0d wren=%b rden=%b wrbin=%0d rdbin=%0d empty=%b full=%b",
+                     $time, rd_wr_en, rd_rd_en,
+                     xspi_slave.u_rdfifo.wr_bin[8:0], xspi_slave.u_rdfifo.rd_bin[8:0],
+                     rd_rd_empty, rd_wr_full);
+    end
+
     // ---- debug trace: start pulses + engine FSM states ----
     always @(posedge aclk) begin
         if (reg_rd_start || ddr_rd_start)
