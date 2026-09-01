@@ -124,6 +124,22 @@ module tb_xspi_slave;
         $dumpvars(0, tb_xspi_slave);
     end
 
+    // ================= AXI handshake counters (debug) =================
+    integer axi_ddr_aw, axi_ddr_w, axi_ddr_b, axi_ddr_ar, axi_ddr_r;
+    integer axi_reg_aw, axi_reg_w, axi_reg_b, axi_reg_ar, axi_reg_r;
+    always @(posedge aclk) begin
+        if (m_ddr_awvalid && m_ddr_awready) axi_ddr_aw = axi_ddr_aw + 1;
+        if (m_ddr_wvalid  && m_ddr_wready)  axi_ddr_w  = axi_ddr_w  + 1;
+        if (m_ddr_bvalid  && m_ddr_bready)  axi_ddr_b  = axi_ddr_b  + 1;
+        if (m_ddr_arvalid && m_ddr_arready) axi_ddr_ar = axi_ddr_ar + 1;
+        if (m_ddr_rvalid  && m_ddr_rready)  axi_ddr_r  = axi_ddr_r  + 1;
+        if (m_reg_awvalid && m_reg_awready) axi_reg_aw = axi_reg_aw + 1;
+        if (m_reg_wvalid  && m_reg_wready)  axi_reg_w  = axi_reg_w  + 1;
+        if (m_reg_bvalid  && m_reg_bready)  axi_reg_b  = axi_reg_b  + 1;
+        if (m_reg_arvalid && m_reg_arready) axi_reg_ar = axi_reg_ar + 1;
+        if (m_reg_rvalid  && m_reg_rready)  axi_reg_r  = axi_reg_r  + 1;
+    end
+
     // ================= clocks =================
     reg [31:0] xspi_half;  // half-period of xspi_clk in ns
     reg [31:0] aclk_half;  // half-period of aclk in ns
@@ -262,6 +278,8 @@ module tb_xspi_slave;
         cov_cs_mid=0; cov_dummy=0; cov_clk_ratio=0; cov_irregular=0;
         cov_access_reg=0; cov_access_ddr=0; cov_addr_decode=0; cov_interleaved=0;
         chk_checked=0; chk_bad=0;
+        axi_ddr_aw=0; axi_ddr_w=0; axi_ddr_b=0; axi_ddr_ar=0; axi_ddr_r=0;
+        axi_reg_aw=0; axi_reg_w=0; axi_reg_b=0; axi_reg_ar=0; axi_reg_r=0;
 
         #100; arst_n = 1'b1; #100;
 
@@ -579,6 +597,8 @@ module tb_xspi_slave;
 
         #500;
         $display("CHECK data_integrity %0d %0d", chk_checked, chk_bad);
+        $display("AXI DDR aw=%0d w=%0d b=%0d ar=%0d r=%0d", axi_ddr_aw, axi_ddr_w, axi_ddr_b, axi_ddr_ar, axi_ddr_r);
+        $display("AXI REG aw=%0d w=%0d b=%0d ar=%0d r=%0d", axi_reg_aw, axi_reg_w, axi_reg_b, axi_reg_ar, axi_reg_r);
         $display("COVER host_init_sequence %0d", cov_host_init);
         $display("COVER memory_mapped_write %0d", cov_mm_write);
         $display("COVER memory_mapped_read %0d", cov_mm_read);
