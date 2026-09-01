@@ -118,6 +118,12 @@ module tb_xspi_slave;
         .rresp(m_ddr_rresp), .rlast(m_ddr_rlast), .rid(m_ddr_rid)
     );
 
+    // ================= waveform dump =================
+    initial begin
+        $dumpfile("xspi_tb.vcd");
+        $dumpvars(0, tb_xspi_slave);
+    end
+
     // ================= clocks =================
     reg [31:0] xspi_half;  // half-period of xspi_clk in ns
     reg [31:0] aclk_half;  // half-period of aclk in ns
