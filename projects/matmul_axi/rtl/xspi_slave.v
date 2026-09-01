@@ -495,9 +495,27 @@ module xspi_slave #(
         else if ((phase == P_DATA) && !is_read)
             wr_data_started <= 1'b1;          // high after first P_DATA posedge
     end
+    // hw_pipe is only valid once it has been loaded at a P_DATA negedge this
+    // frame. The very first P_DATA posedge of a frame still holds the previous
+    // frame's (or reset) pipe value, so we must not commit on that edge -- even
+    // for a 1-halfword frame, where that edge is the ONLY data edge and hw_pipe
+    // was loaded at the immediately-preceding negedge. Tracking "loaded this
+    // frame" (set on the first P_DATA negedge) is exact: it is high by the first
+    // posedge for any frame with >=1 data cycle, so a 1-hw frame commits its
+    // single halfword and multi-hw frames are unchanged.
+    reg pipe_loaded;
+    always @(negedge xspi_clk or negedge arst_n) begin
+        if (!arst_n)
+            pipe_loaded <= 1'b0;
+        else if (cs_fall)
+            pipe_loaded <= 1'b0;
+        else if ((phase == P_DATA) && !is_read)
+            pipe_loaded <= 1'b1;
+    end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
-    // wr_data_started gates the first P_DATA posedge (stale pipe from before frame).
-    wire                 w_commit  = hw_push_en && !w_wr_full && wr_data_started;
+    // Commit is gated on pipe_loaded (not wr_data_started): high from the first
+    // P_DATA posedge onward for any frame that has a data cycle.
+    wire                 w_commit  = hw_push_en && !w_wr_full && pipe_loaded;
     wire                 w_wr_full;
 
     // TEMP DEBUG: log every committed write halfword (front-end -> FIFO).
