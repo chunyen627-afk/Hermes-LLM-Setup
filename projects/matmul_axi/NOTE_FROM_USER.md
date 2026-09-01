@@ -1,106 +1,79 @@
-# 給你的提醒
+# 規劃者的診斷（2026-09-01 15:16）—— 讀完再動手
 
-> 10:50 重寫。先前那些零碎的 xSPI 說明**全部作廢**，
-> 改看 `SPEC_xspi_bridge.md`（同目錄）。
+## 根因已經定位到「寫入資料相位錯位」，不是 AXI、不是位址解碼
 
-## ⛔ 先讀 `SPEC_xspi_bridge.md`
+用 VCD + WCOMMIT 實測，AXI 寫入交易**確實有發出**（reg 4 次 awvalid、
+ddr 12 次），wstrb 全是 1111 沒被遮掉。所以問題**不在 AXI 引擎**。
+真正的問題在 xspi 前端組 halfword 的時候。
 
-xSPI 這一輪的完整規格在那份，包含：
-硬性需求、兩側介面、位址映射、兩種長度模型怎麼接、
-跨時脈域、12 個驗收 cover、做完的自我檢查。
+## 實測證據（跑 `vvp` 後 grep WCOMMIT 就看得到）
 
-**先前 NOTE 裡東一塊西一塊的 xSPI 說明有矛盾，以規格書為準。**
-
-## 這一輪最容易做錯的一件事
-
-你現在寫的是「halfword memory model」—— 一顆有自己記憶體的 PSRAM。
-**那個放進這個專案沒有用。**
-
-STM32 要存取的不是「你晶片裡的記憶體」，是**這個加速器的東西**：
-權重要落在 DDR4（`matmul_core` 才讀得到）、
-參數和 start 要落在 `matmul_top.s_axi_*`。
-
-你自己存一份的話，STM32 寫進去的權重 core 讀不到 —— 那是兩個獨立的東西。
-
-規格書第 10 節有三題自我檢查，寫完對一遍。
-
-## 你做對的部分留著
-
-APS256XX 的線路契約（opcode、DDR x8、位址 2 個 SCK cycle、dummy cycles）、
-async_fifo 跨時脈域 —— 那些對，繼續用。
-**要換的只有「資料存哪裡」：從自己的 mem 陣列，改成發 AXI 交易出去。**
-
-而且你誠實標注了「拿不到 datasheet，從驅動設定推導」，那樣做是對的。
-`rtl/axi4_master.v` 已經驗過了，先看能不能直接用，不要重寫。
-
----
-
-## 時脈頻率定案（16:00 使用者決定）
-
-| 時脈 | 頻率 | 週期 |
-|---|---|---|
-| `xspi_clk` | **50 MHz** | 20.0 ns |
-| `aclk`（計算/AXI） | **100 MHz** | 10.0 ns |
-
-約束檔**已經寫好**在 `constraints/timing.xdc`，不用自己生。
-
-跑合成時第四個參數要指定它：
+BURST 那組期望 `005a 015b 0258 0359 045e 055f 065c 075d`（八筆），
+目前 WCOMMIT 實際送進 FIFO 的是：
 
 ```
-vivado.bat -mode batch -nolog -nojournal \
-  -source C:/Users/pjunm/AppData/Local/hermes/skills/embedded/xilinx-vcu118/references/synth_check.tcl \
-  -tclargs matmul_top 10.0 rtl constraints/timing.xdc
+fcfc, 025b, 0358, 0459, 055e, 065f, 075c      ← 只有七筆
 ```
 
-⚠ **一定要給那個 xdc**。不給的話腳本會自動生一份，
-但自動那份會把兩個時脈設成同一個週期 —— 等於拿錯的目標做時序分析。
+對照後的結論：**每一筆的高低 byte 各自來自不同的資料 cycle**，
+而且整組往後偏移一格、末筆掉了。
 
-合成的完整流程、判讀標準（`status`/`wns_ns`/`latch_count`）、
-時序收不了怎麼調，都在 skill `embedded/xilinx-vcu118` 第六節。
-**Vivado 環境已經實測可用**（Enterprise、XCVU9P 70 parts、board 2.0）。
+## tb 的驅動相位（`tb/tb_xspi_slave.v:216-217`）—— 這是對齊的基準
 
-### 但先把 xspi_slave 做完
+```verilog
+@(negedge xspi_clk); #1; xspi_io_master = hw[15:8];   // upper：negedge 之後放上 -> 要在「下一個 posedge」被採
+@(posedge xspi_clk); #1; xspi_io_master = hw[7:0];    // lower：posedge 之後放上 -> 要在「下一個 negedge」被採
+```
 
-現在 `matmul_top` 合不出來（`xspi_slave.v` 的 AXI 層還沒寫、
-11 個 implicit wire）。合成是**做完這塊之後**的事，不是現在。
+所以一個 halfword 橫跨：posedge N（高 byte）→ negedge N（低 byte）。
 
----
+## 我驗證過的事情（省你時間，不要重試）
 
-## 16:27 —— 關於「clean rewrite the controller」
+1. **`w_fifo_hw = w_rd_data[31:16]` 的位元切片是錯的** —— FIFO 是 48 位元
+   `{addr[31:0], hw[15:0]}`，halfword 在 `[15:0]`、addr 在 `[47:16]`。
+   現在 804/805 兩行寫成 `[47:32]` 和 `[31:16]`，兩個都錯。
+   **但單獨修這個沒有改善**（因為進 FIFO 的資料本身就已經錯位了）。
+   還是要修，只是它不是主因。
 
-你自己抓到的三個 bug 是真的，我獨立驗過：
+2. **`hw_pipe_lo <= w_lo` 是錯的** —— `w_lo` 也在同一個 negedge 用 NBA 更新，
+   讀到的是**上一拍**的值。改成 `hw_pipe_lo <= xspi_io[7:0]`（當下直接採）
+   之後，**低 byte 就全對了**：`075d 065c 055f 045e` 完全命中期望值。
+   ✅ 這一步是真的有效，請保留。
 
-`reg_rd_len` 在行 510、533、581 被 **assign 三次**（multiple driver，
-合成必定失敗），而且三個全是 placeholder（都指派 0）——
-讀取長度等於根本沒實作。這是連續分段追加時疊出來的：
-每次補一段就加一個 placeholder，忘了移除前一個。
+3. 改完 (2) 之後**剩下高 byte 還晚一拍**：得到 `fc5b 0258 0359...`，
+   高 byte 是下一筆的。
 
-**重寫可以，但不要一次吐完。** 13:02 那次就是想一次寫完 19KB，
-撞單次輸出上限被截斷，然後卡死兩小時沒人發現。
+4. **把整個 push 延後一拍（`hw_push_d`）→ 反而更糟**：首筆消失、末筆重複。
+   ❌ 不要走這條。
 
-做法：
-1. 先只刪掉重複的 placeholder（510、533、581 留一個），存檔
-2. 再補讀取引擎的真正邏輯，存檔
-3. 再補寫入引擎，存檔
-4. 每步之後跑一次 `iverilog -o /dev/null rtl/*.v` 確認能編譯
+5. **加 `hw_pipe_loaded` 閘門只擋首筆 → 完全沒作用**（WCOMMIT 一模一樣），
+   因為 flag 在 negedge 才設起來，posedge 的首次 push 已經過去了。
+   ❌ 不要走這條。
 
-**每一步都是可以獨立驗證的單元。** 撞上限會自動接續，
-但截斷卡死不會 —— 差別在這裡。
+## 所以還沒解的就剩一件事
 
----
+低 byte 已經對齊、高 byte 晚一拍。
 
-## 18:02 —— 你在 686/715 行繞了三輪
+`w_hi` 在 posedge N 採樣 io（= cycle N 的高 byte，這是對的），
+`hw_pipe` 在 negedge N 組裝（此時 `w_hi` 是 cycle N 的，也對），
+但 **FIFO 在 posedge 寫入**（`u_wfifo` 的 `.wr_clk(xspi_clk)`，
+`async_fifo.v:55` 是 `always @(posedge wr_clk)`）——
+posedge N+1 寫進去的是 negedge N 組好的值。
 
-`wr_beat[(wr_hwpb*8+15) : (wr_hwpb*8)] <= w_fifo_hw;`
+**請你自己推一遍這條鏈上到底哪一級多／少了半拍**，把高 byte 也對齊。
+建議做法：在 negedge 的 always block 裡加 `$display` 印出
+`{w_hi, xspi_io[7:0]}` 跟當下的 `$time`，跟 tb 送出的順序逐拍對照，
+不要用猜的。
 
-這行從 17:45 到現在改了三次，每次只換變數名（wr_byte_cnt → wr_hwpb），
-**錯誤訊息一字沒變**。編譯器講的是同一件事：
-Verilog 的 `[msb:lsb]` 兩個邊界都必須是常數。
+## 驗收（自己跑，貼輸出）
 
-**你在這個專案別的地方已經用對過同樣的東西**，自己去看：
+```bash
+cd /c/Users/pjunm/matmul_axi
+/c/iverilog/bin/iverilog -o out/scratch/tb.out -g2012 -s tb_xspi_slave tb/tb_xspi_slave.v rtl/*.v
+/c/iverilog/bin/vvp out/scratch/tb.out | grep WCOMMIT | head -12
+/c/iverilog/bin/vvp out/scratch/tb.out | grep -E "CHECK|SIMEND"
+```
 
-  grep -n "+:" rtl/axi4_slave_reg.v rtl/matmul_top.v rtl/matmul_core.v
-
-`matmul_top.v:296` 那行跟你現在要做的是同一類：基底是變數、寬度是常數。
-
-改完編譯確認，再繼續往下做。
+**先看 WCOMMIT 那八筆有沒有變成 `005a 015b 0258 0359 045e 055f 065c 075d`。**
+WCOMMIT 對了，`CHECK data_integrity` 才會跟著降。
+每改一次就貼這兩段輸出 —— 不要連改三處再一起跑。
