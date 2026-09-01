@@ -505,7 +505,13 @@ module xspi_slave #(
         end
     end
     wire [WR_FIFO_W-1:0] w_wr_data = {addr_reg, {hw_pipe_hi, hw_pipe_lo}};
-    wire                 w_commit  = hw_push_en && !w_wr_full;
+    // Per-frame gate: 0 on the very first P_DATA posedge (stale hw_pipe), 1 after.
+    always @(posedge xspi_clk or negedge arst_n) begin
+        if (!arst_n)      wr_data_started <= 1'b0;
+        else if (cs_fall) wr_data_started <= 1'b0;   // fresh frame: drop the stale push
+        else if ((phase == P_DATA) && !is_read) wr_data_started <= 1'b1;
+    end
+    wire                 w_commit  = hw_push_en && !w_wr_full && wr_data_started;
     wire                 w_wr_full;
 
     // TEMP DEBUG: log every committed write halfword (front-end -> FIFO).
