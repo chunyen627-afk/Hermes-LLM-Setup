@@ -479,6 +479,13 @@ module xspi_slave #(
     // negedge N-1 = hw0, and each subsequent posedge emits the next halfword.
     wire        hw_push_en = (phase == P_DATA) && !is_read;
     reg [7:0]   hw_pipe_hi, hw_pipe_lo;
+    // The first P_DATA posedge of a frame must NOT push: at that edge hw_pipe
+    // still holds the stale value loaded during the dummy phase (stale w_hi +
+    // last dummy byte). The real first halfword only lands in hw_pipe on the
+    // following negedge. Gate the push with wr_data_started, which is set on the
+    // first P_DATA posedge and held for the rest of the frame -- so exactly one
+    // (stale) push is dropped per frame and every real halfword is kept.
+    reg         wr_data_started;
     // Load the pipeline at the negedge where BOTH bytes of halfword i are known:
     //   upper_i = w_hi register (sampled on the posedge earlier in this cycle,
     //             still holding its value -- not updated on this negedge)
