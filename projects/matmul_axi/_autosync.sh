@@ -18,7 +18,8 @@ cp "$P"/rtl/*.v "$T/rtl/" 2>/dev/null
 cp "$P"/tb/*.v  "$T/tb/"  2>/dev/null
 cp "$P"/constraints/*.xdc "$T/constraints/" 2>/dev/null
 for f in simcheck.json ARCHITECTURE.md HANDOFF.md NOTE_FROM_USER.md \
-         SPEC_xspi_bridge.md STATUS_NOW.md README.md; do
+         SPEC_xspi_bridge.md STATUS_NOW.md README.md \
+         CHANGELOG_xspi.md HANDOFF_TO_NEXT.md TODO.md; do
     [ -f "$P/$f" ] && cp "$P/$f" "$T/" 2>/dev/null
 done
 

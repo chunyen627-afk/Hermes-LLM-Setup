@@ -801,8 +801,12 @@ module xspi_slave #(
     reg [AXI_DATA_WIDTH-1:0] wr_beat;    // the beat currently assembled/presented
     reg        wr_beat_valid;            // wr_beat is a complete beat to present
 
-    wire [31:0] w_fifo_addr = w_rd_data[WR_FIFO_W-1:32];
-    wire [15:0] w_fifo_hw   = w_rd_data[31:16];
+    // FIFO entry layout (packed at the xspi side, line ~486):
+    //   { addr_reg[31:0], halfword[15:0] }  =>  [WR_FIFO_W-1:16] = addr, [15:0] = hw.
+    // Unpack MUST match that layout exactly -- an off-by-one part-select here
+    // silently feeds the address's low bits into the write data (26/26 mismatch).
+    wire [31:0] w_fifo_addr = w_rd_data[WR_FIFO_W-1:16];
+    wire [15:0] w_fifo_hw   = w_rd_data[15:0];
 
     // total bytes for the frame, rounded UP to a whole number of beats (>= 1).
     // The axi4_master requires wr_len_bytes to be a multiple of the beat size.
