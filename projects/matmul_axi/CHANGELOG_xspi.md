@@ -337,7 +337,7 @@ RDWR t=454 wrdata=xxxx pushphase=1 ...
 
 ---
 
-## 🎯 00:00 —— 找到了：`w_rd_empty` 恆為 1，aclk 側看不到 FIFO 裡的資料
+## ⚠ 00:00 —— （這節的結論已被 00:26 推翻，只看證據不要看結論）
 
 你加的 AXI 握手計數器是**決勝的一手**。數字直接指出根因：
 
@@ -452,7 +452,7 @@ always @(posedge aclk) if (ctl_rd_en || wr_state != 0)
 
 ---
 
-## ✅ 00:30 —— 規劃者更正：`async_fifo.v` 沒有問題，不要查它
+## ✅ 00:26 —— 規劃者更正：`async_fifo.v` 沒有問題，不要查它
 
 我 00:00 那節的假設 (A)「CDC 指標沒同步」**是錯的**。
 規劃者讀完 `rtl/async_fifo.v` 全部 117 行，確認它是**教科書級正確**的實作：
@@ -488,3 +488,70 @@ always @(posedge aclk) if (ctl_rd_en || wr_state != 0)
 4. 查那個狀態的離開條件為什麼不成立
 
 ⛔ 寫入端那四個修正維持不動。改完先確認 WCOMMIT 兩組沒退化。
+
+---
+
+## 🎯 00:28 —— 死結找到了：`WR_WAIT` 永遠等不到 `wr_done`
+
+你修掉 `$past` 讓模擬恢復（很好，位元切片也順手改對了），
+`WRSTATE` 追蹤直接把答案印出來：
+
+```
+WRSTATE t=2    xx->00              ← 重置
+WRSTATE t=690  00->01  hwleft=0    ← 唯一一次啟動，進 WR_DRAIN
+WRSTATE t=694  01->10  hwleft=0    ← 4ns 後就跳到 WR_WAIT
+（之後再也沒有任何轉移 —— 永遠卡在狀態 2）
+```
+
+**`wr_state` 卡死在 `WR_WAIT`（=2），所以之後每一個控制字都被忽略。**
+這就是為什麼 `WRSTART` 只有 1 次、`AXI DDR aw=0`。
+
+### 死結的成因（三件事湊起來）
+
+1. **進 `WR_DRAIN` 時 `wr_hw_left = 0`**（`f_len_hw` 是 0）
+   → `WR_DRAIN` 沒送出任何一個 beat 就直接離開（t=690→694 只隔 4ns）
+
+2. **但 `wr_start` 已經發出去了**，而且 `wr_len_bytes` 最小是一個完整 beat：
+   ```verilog
+   wire [15:0] wr_total_beats = (wr_beats_raw == 16'd0) ? 16'd1 : wr_beats_raw;
+   wire [15:0] wr_len_bytes   = wr_total_beats * BEAT_BYTES;
+   ```
+   → **master 被告知「會有 1 個 beat」，但一個都沒收到**
+
+3. **`WR_WAIT` 的唯一出路是 `wr_done`**：
+   ```verilog
+   WR_WAIT: begin
+       if ((wr_target_reg && reg_wr_done) || (!wr_target_reg && ddr_wr_done))
+           wr_state <= WR_IDLE;
+   end
+   ```
+   → master 在等那個永遠不來的 beat，`wr_done` 永遠不發 → **死結**
+
+### 00:20 那個「`len=0`」不是次要問題，它就是起因
+
+我當時說「先不要碰」，那個判斷錯了 —— 抱歉。
+`CTLPUSH t=654 isread=0 isreg=1 len=0` 那筆長度 0 的控制字，
+就是把狀態機推進死結的那一下。
+
+### 要解的是「長度 0 的寫入 frame 怎麼處理」
+
+自己判斷哪個做法對，但至少要涵蓋這件事：
+**`f_len_hw == 0` 的寫入 frame 不應該發 `wr_start`**（沒資料可寫），
+應該直接跳過、留在 `WR_IDLE`。
+
+⚠ 另外檢查一下 `WR_WAIT` 該不該有逃生門（timeout 或 abort）。
+現在只要 master 因為任何原因不發 `wr_done`，整個引擎就永久停擺 ——
+**一個 frame 出問題會害死後面所有 frame**，這在真實硬體上是嚴重缺陷，
+不只是模擬問題。但**先解 len=0**，逃生門之後再說。
+
+### 驗收
+
+```bash
+/c/iverilog/bin/vvp out/scratch/tb.out | grep -E "WRSTATE|^AXI " | head -20
+```
+- `WRSTATE` 要看到**多次** `00->01->10->00` 的完整循環（不是卡在 10）
+- `AXI DDR aw=` 要 **> 0**（現在是 0）
+- WCOMMIT 兩組維持不變
+
+⛔ 寫入端那四個修正維持不動（WCOMMIT 剛實測仍全對）。
+⛔ `async_fifo.v` 沒問題，不要查（見 00:30 那節）。
