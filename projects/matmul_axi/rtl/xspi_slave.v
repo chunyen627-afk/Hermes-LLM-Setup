@@ -337,6 +337,8 @@ module xspi_slave #(
                     // Frame ended during the dummy cycles -> abort.
                     if (cs_rise) begin
                         phase <= P_IDLE;
+                    end else if (is_read && dummy_cnt == 8'd1) begin
+                        phase <= P_DATA;
                     end else if (dummy_cnt == 8'd0) begin
                         phase <= P_DATA;
                     end else begin
