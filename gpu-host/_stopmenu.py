@@ -20,6 +20,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 AUTORELAY = os.path.join(HERE, "_autorelay.py")
@@ -271,6 +272,20 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="已經有對話在跑也照樣派（會搶 slot，兩邊都變慢）")
     args = ap.parse_args()
+
+    # 規劃者接管模式：雲端規劃者（Claude Code）自己盯 idle、自己派工。
+    # 旗標檔在、而且 6 小時內更新過，互動視窗就直接退出 —— 不問、不派。
+    # 26/09/02 踩過：規劃者已派工，橋接器又彈了兩個「直接派工？」視窗，
+    # 按 Enter 就會開出第二個 session 搶 slot。
+    flag = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "_planner_active")
+    if not args.auto and os.path.exists(flag):
+        age_h = (time.time() - os.path.getmtime(flag)) / 3600
+        if age_h < 6:
+            out("規劃者接管中（旗標 %.1f 小時前更新）—— 派工由規劃者負責，"
+                "這個視窗不做事。" % age_h)
+            out("要改回手動：刪掉 " + flag)
+            return
 
     if args.auto:
         # 全自動：撞上限就接續，正常結束就做下一階段。
