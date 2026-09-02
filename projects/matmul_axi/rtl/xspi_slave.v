@@ -794,7 +794,9 @@ module xspi_slave #(
 
             if (rd_state == RD_IDLE) begin
                 if (!ctl_rd_empty && head_is_read) begin
-                    // latch the frame and issue the read on the correct master immediately
+                    // latch the frame and issue the read on the correct master immediately.
+                    // (The show-ahead FIFO presents valid head data combinationally as
+                    // soon as !ctl_rd_empty, so no f_valid one-cycle delay is needed.)
                     rd_state       <= RD_ACTIVE;
                     rd_target_reg  <= head_is_reg_region;
                     rd_hw_left     <= head_len_hw;
@@ -806,19 +808,6 @@ module xspi_slave #(
                     end else begin
                         ddr_rd_start <= 1'b1;
                         ddr_rd_addr  <= head_target_addr;
-                    end
-                end else if (f_valid && f_is_read) begin
-                    rd_state       <= RD_ACTIVE;
-                    rd_target_reg  <= f_is_reg_region;
-                    rd_hw_left     <= f_len_hw;
-                    rd_beat_cnt    <= 16'd0;
-                    rd_total_beats <= rd_total_beats_comb;
-                    if (f_is_reg_region) begin
-                        reg_rd_start <= 1'b1;
-                        reg_rd_addr  <= f_target_addr;
-                    end else begin
-                        ddr_rd_start <= 1'b1;
-                        ddr_rd_addr  <= f_target_addr;
                     end
                 end
             end else begin
