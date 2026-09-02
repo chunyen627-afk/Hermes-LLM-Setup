@@ -337,6 +337,15 @@ module xspi_slave #(
                     // Frame ended during the dummy cycles -> abort.
                     if (cs_rise) begin
                         phase <= P_IDLE;
+                    end else if (is_read && dummy_cnt == 8'd1) begin
+                        // Reads enter P_DATA one cycle earlier than writes:
+                        // the aclk-side AXI read needs a cycle to fill the
+                        // FIFO after P_DATA starts.  By entering one posedge
+                        // earlier, the "FIFO empty" hold cycle falls during
+                        // the TB's last dummy cycle instead of the first
+                        // data sample.  Writes keep original timing (frozen).
+                        phase <= P_DATA;
+                        rd_frame_active <= 1'b1;
                     end else if (dummy_cnt == 8'd0) begin
                         phase <= P_DATA;
                     end else begin
