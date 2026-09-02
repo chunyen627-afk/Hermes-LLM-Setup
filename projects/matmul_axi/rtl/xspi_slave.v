@@ -597,7 +597,7 @@ module xspi_slave #(
     //             fixed prefetch size is used (SPEC §6: prefetch, discard unused).
     //   - writes: pushed at CS deassert (frame complete) carrying the exact
     //             committed halfword count (wr_hw_cnt).
-    localparam [15:0] RD_PREFETCH_HW = 16'd16;   // 16 halfwords = 32 bytes = 8 beats
+    localparam [15:0] RD_PREFETCH_HW = 16'd2;   // 2 halfwords = 4 bytes = 1 beat
     wire [15:0] ctl_len = is_read ? RD_PREFETCH_HW
                                   : (wr_hw_cnt + {15'd0, w_commit});
     wire        ctl_push_rd = (is_read && !is_reg && (phase == P_ADDR && addr_cnt == 2'd3));
