@@ -999,3 +999,35 @@ CHECK    26 25
 > test empirically rather than hand-trace further
 
 對，就是這樣。**先印出來，再改。**（派工模板第 8 條）
+
+---
+
+## 11:35 —— 讀取 `dummy_n - 3` 是進步，不要改回去（雖然 CHECK 25→26）
+
+你拆開讀寫的 dummy 計數（讀 `-3`、寫 `-2`）—— **結構對了，寫入端完好**
+（`AXI DDR aw=13`、WCOMMIT 無垃圾，規劃者實測）。
+
+CHECK 從 25 變 26 看起來是退步，**但錯誤型態變乾淨了**：
+
+```
+改前：hw0=0000  hw1=00ff  hw2=0000  hw3=xxxx   ← 交替垃圾，之前那筆「對」是巧合
+改後：hw0=xxxx  hw1=00ff  hw2=01fe  hw3=02fd   ← 資料全對，整串晚一格
+```
+
+**現在 `got[i] = expected[i-1]`。** 第一筆推上線的是 stale 值，之後每筆都是對的。
+這跟寫入端當初「第一次 commit 是 stale」**完全同型**，你那時用
+`wr_data_started` 閘門解掉的。
+
+### 要做的：讀取端也丟掉第一筆 stale 輸出（鏡像 `wr_data_started`）
+
+⛔ **不要再調 dummy 計數**（`-4` 只會換一種錯法）—— 相位已經對了，
+剩下的是「第一筆輸出用了還沒載入的值」。照第 10 條：這是另一件事，
+用另一個訊號，不要塞回 `dummy_cnt`。
+
+**先印再改**：在讀取 P_DATA 的第一個 posedge 印 `rd_shift_out`、`rd_lo_q`、
+`io_out`、`rd_rd_empty`，看第一筆是 FIFO 還沒 pop、還是 pop 了但 shift 暫存器
+還沒載入 —— 兩者修法不同，印一次就知道。
+
+### 驗收（維持 + 新增）
+- WCOMMIT 兩組乾淨、`AXI DDR aw=13`（不能退化）
+- `WRITE_VERIFY hw 0` 從 `xxxx` 變 `00ff`，整串對齊 → CHECK 應該一次掉一大截
