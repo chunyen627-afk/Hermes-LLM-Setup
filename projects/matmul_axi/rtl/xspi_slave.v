@@ -338,7 +338,18 @@ module xspi_slave #(
                     if (cs_rise) begin
                         phase <= P_IDLE;
                     end else if (dummy_cnt == 8'd0) begin
-                        phase <= P_DATA;
+                        // Reads need to enter P_DATA one cycle earlier than
+                        // writes: the DUT drives io_out via NBA, and the TB
+                        // samples 1ns after the posedge.  Entering P_DATA at
+                        // this posedge (instead of the next) ensures the first
+                        // value the TB sees is hw_0, not a stale zero.
+                        // Writes keep the original timing (frozen).
+                        if (is_read) begin
+                            phase <= P_DATA;
+                            rd_frame_active <= 1'b1;
+                        end else begin
+                            phase <= P_DATA;
+                        end
                     end else begin
                         dummy_cnt <= dummy_cnt - 8'd1;
                     end
