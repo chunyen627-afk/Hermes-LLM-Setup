@@ -307,6 +307,7 @@ module xspi_slave #(
                             default: addr_b0 <= xspi_io[7:0];   // 2'd3
                         endcase
                         if (addr_cnt == 2'd3) begin
+                            addr_reg <= {addr_b3, addr_b2, addr_b1, xspi_io[7:0]};
                             phase <= P_ADDR_D;   // all bytes latched; assemble next cycle
                         end else begin
                             addr_cnt <= addr_cnt + 2'd1;
