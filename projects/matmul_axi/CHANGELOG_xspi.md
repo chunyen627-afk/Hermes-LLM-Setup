@@ -1161,7 +1161,7 @@ WCOMMIT both groups correct (00ff/01fe/02fd/03fc @90010000; 005a..075d @90010100
 ```
 
 **Full gate (`simcheck.py --all`): all 8 blocks PASS** (axi4_slave_reg sweeps
-AXI_DATA_WIDTH=32/64/128/256 → 10 runs total, every one `ok: true`):
+AXI_DATA_WIDTH=32/64/128/256 → 11 runs total, every one `ok: true`):
 f32_units, matmul_core, axi4_slave_reg, axi4_master, matmul_top, cdc,
 xspi_slave, matmul_top_cdc.
 
