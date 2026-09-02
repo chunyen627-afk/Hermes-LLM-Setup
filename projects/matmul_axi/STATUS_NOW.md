@@ -1,72 +1,66 @@
-# 現況快照（規劃者維護，2026-09-02 10:38）
+# 現況快照（規劃者維護，2026-09-02 18:35）
 
-> 重開機或換 session 接續時**先讀這份**，再讀 `CHANGELOG_xspi.md` 最後三節。
+> 換 session 接續時**先讀這份**。
 
 ## 一句話
 
-**寫入路徑已完成並凍結，主指標 26 → 25（28 小時來第一次動）。**
-現在卡在讀取路徑「晚一個週期進 `P_DATA`」，27B 已診斷出來，正在拆讀寫相位。
+**RTL 驗證階段完成 —— 11 個 run 全 PASS，零 FAIL。**
+下一階段是系統整合（Vivado + Xilinx IP + xsim）。
 
-## 目前的數字（規劃者實測基準，改動前後都要比對）
+## 已完成的基準（改任何 .v 之前先跑一次比對）
 
+```bash
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --all
 ```
-CHECK data_integrity 26 25
-AXI DDR aw=13 w=17 b=13 ar=24 r=113
-WCOMMIT  00ff 01fe 02fd 03fc                       ← 開頭無垃圾
-         005a 015b 0258 0359 045e 055f 065c 075d   ← 開頭無垃圾
-tb 驗收邏輯指紋  b8d20766db2b0402f81bc1f97de69750
 ```
-
-**任何一項退化就是改錯了，立刻回退。**
-
-## ⛔ 寫入路徑已凍結 —— 四個修正互相依賴，不要碰
-
-1. `hw_pipe_lo <= xspi_io[7:0]` —— 低 byte 不能讀同邊 NBA 的 `w_lo`
-2. `dummy_cnt <= dummy_n - 2` —— P_DATA 進入時機
-3. negedge 直接 commit `{w_hi, xspi_io}` —— 讓單筆 frame 也對
-4. `wr_data_started` 閘門 —— 丟掉每 frame 第一次的 stale commit
-
-證據：`AXIWR beat=0 data=01fe00ff`、`beat=64 data=015b005a` —— 資料
-正確打包成 32-bit beat 並寫進 DDR 模型。**寫入端沒有問題。**
-
-## 現在唯一的問題：讀取路徑晚一拍
-
-```
-WRITE_VERIFY hw 0: got 0000 expected 00ff
-WRITE_VERIFY hw 1: got 00ff expected 01fe    ← got 的正是 hw 0 的期望值
+f32_units / matmul_core / axi4_slave_reg[32,64,128,256] /
+axi4_master / matmul_top / cdc / xspi_slave / matmul_top_cdc
+→ 11 run 全 PASS，"ok": true × 12
+xspi_slave: data_integrity 26 checked 0 bad，12 cover 全中
 ```
 
-⚠ `WRITE_VERIFY` 這個名字會誤導 —— 它的**驗證動作是讀回來比對**，
-所以讀不對一樣 fail。不要因為它叫 write verify 就回去改寫入端。
+⛔ **RTL 凍結。** 退化就回退，不要「順手改」。
 
-27B 自己的診斷（10:29，正確）：
-> the READ path ... entering P_DATA one cycle late
-> decoupling the read and write phase timing — exactly "split the signal" (rule 10)
+## xspi_slave 這關的解法（六個修正互相依賴）
 
-**⛔ 但不要用 `dummy_cnt = dummy_n - 3`** —— 那會讓寫入端整串偏移。
-正解是拆開讀寫的相位時機（`is_read` 是現成的訊號）。
+寫入端四個：
+1. `hw_pipe_lo <= xspi_io[7:0]`（不能讀同邊 NBA 的 `w_lo`）
+2. 寫入 `dummy_cnt <= dummy_n - 2`
+3. negedge 直接 commit `{w_hi, xspi_io}`
+4. `wr_data_started` 閘門（丟掉每 frame 第一次 stale commit）
 
-## 規劃者的工作守則（09-02 訂）
+讀取端兩個：
+5. 讀取 `dummy_cnt <= dummy_n - 3`（用 `is_read` 與寫入分開）
+6. 首筆 stale 輸出閘門
 
-只做四件事，詳見 `HANDOFF_TO_NEXT.md` 第六之二節：
-1. **簡單查證** —— 監控自己跑，只看一行數字
-2. **防重複** —— tb 驗收邏輯 md5 指紋自動盯
-3. **寫行為規則** —— 進 `_stopmenu.py` 模板（已有 11 條）
-4. **寫 CHANGELOG** —— 只在它卡住或走岔時
+tb 一個：第二次讀（`0x9001_0004`）的期望值補上 +2 偏移
 
-⛔ **不自己下場除錯。** 給方法 > 給答案。
+## 下一步（順序不要跳）
 
-## 環境備註
+```
+✅ xspi_slave 過 gate
+→ ⏳ 系統整合（Vivado block design + Xilinx IP + xsim）  ← 現在這裡
+→ 合成 + 時序（skill embedded/xilinx-vcu118 第六節）
+→ implement + bitstream
+→ 上板量加速比 ← 「完工」的定義
+```
 
-- Claude Code CLI 已更新到 **2.1.258**（09-02 10:36）
-- llama-server 正常（health/slots 都快）
-- 27B 連續三輪撞截斷，原因都是**用長篇推理手推訊號值**燒光 ctx
-  → 派工時要強調「印出來看，不要用想的」
+**目標是「先通 15M 的 1 MAC 版本」**，不做平行化、不換 42M、不優化。
+判斷任何提議時問：**這讓「能上板跑」更快出現，還是更慢？**
 
-## 監控（重開 session 後要重建）
+### 系統整合的既定決定（08-31 訂）
+- interconnect、width converter、MIG 全用 **Xilinx 內建 IP**，不自己寫
+- 那些是加密 SystemVerilog、只能用 xsim，**絕不進模組層的 iverilog gate**
+- 時脈：`aclk` 100 MHz、`xspi_clk` 50 MHz，約束在 `constraints/timing.xdc`
 
-兩個 Monitor：
-1. **存檔 + 指標** —— 每 5 分鐘跑 `_autosync.sh`，只在數字變化或
-   驗收指紋被動時通報
-2. **行程健康** —— 45 秒一次，看卡死/截斷/發呆（idle 判定要
-   交叉驗證 log 靜止，`_health.py` 的 agents 會報過期資訊）
+### ⚠ 已知風險
+`vivado-vcu118-setup` 記憶：**XCVU9P 要 Enterprise 授權**，
+Standard 版只有 4 顆 Alveo。系統整合前要先確認授權，否則卡在合成。
+
+## 規劃者工作守則
+見 `HANDOFF_TO_NEXT.md` 第六之二節。只做四件事：簡單查證 / 防重複 /
+寫行為規則 / 寫 CHANGELOG。⛔ 不自己下場除錯。
+
+派工：`_planner_active` 旗標讓橋接器彈窗閉嘴；用
+`python _autorelay.py --task-file _mytask.txt` 派自己寫的題目
+（`_stopmenu.py --auto` 會覆寫 `next_task.txt`）。
