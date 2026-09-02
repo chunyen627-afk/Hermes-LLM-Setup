@@ -154,7 +154,7 @@ module xspi_slave #(
     wire                 rd_rd_en;       // pop the read FIFO (xspi side)
 
     // control FIFO
-    reg                  ctl_push;
+    wire                 ctl_push;
     wire [CTL_W-1:0]     ctl_rd_data;
     wire                 ctl_rd_empty;
     wire                 ctl_rd_en;      // pop the control FIFO (aclk side)
@@ -600,7 +600,16 @@ module xspi_slave #(
     localparam [15:0] RD_PREFETCH_HW = 16'd16;   // 16 halfwords = 32 bytes = 8 beats
     wire [15:0] ctl_len = is_read ? RD_PREFETCH_HW
                                   : (wr_hw_cnt + {15'd0, w_commit});
-    wire [CTL_W-1:0] ctl_wr_data = {is_read, is_reg, ctl_len, addr_reg};
+    wire        ctl_push_rd = (is_read && !is_reg && (phase == P_ADDR && addr_cnt == 2'd3));
+    reg         ctl_push_wr;
+    always @(posedge xspi_clk or negedge arst_n) begin
+        if (!arst_n) ctl_push_wr <= 1'b0;
+        else         ctl_push_wr <= (cs_rise && (phase == P_DATA) && !is_read);
+    end
+    assign ctl_push = ctl_push_rd || ctl_push_wr;
+
+    wire [31:0] ctl_addr_in = ctl_push_rd ? {addr_b3, addr_b2, addr_b1, xspi_io[7:0]} : addr_reg;
+    wire [CTL_W-1:0] ctl_wr_data = {is_read, is_reg, ctl_len, ctl_addr_in};
     wire             ctl_wr_full;
     async_fifo #(
         .DATA_WIDTH(CTL_W),
@@ -621,17 +630,6 @@ module xspi_slave #(
     // Pop the control FIFO on the cycle an engine latches it.
     assign ctl_rd_en = (rd_state == RD_IDLE && !ctl_rd_empty && head_is_read) ||
                        (wr_state == WR_IDLE && f_valid && !f_is_read);
-
-    // Push timing: reads at end of P_ADDR (so the fetch starts during the dummy
-    // cycles); writes at CS deassert (frame complete, length now known).
-    // Reg reads are NOT pushed: they serve data from mr_read() directly in the
-    // xspi_clk domain and don't use the read FIFO. Pushing them would pollute
-    // the FIFO with stale/xxxx entries that shift subsequent DDR reads.
-    always @(posedge xspi_clk or negedge arst_n) begin
-        if (!arst_n)      ctl_push <= 1'b0;
-        else              ctl_push <= (is_read && !is_reg && (phase == P_ADDR && addr_cnt == 2'd3)) ||
-                                      (cs_rise && (phase == P_DATA) && !is_read);
-    end
 
     // ---- aclk-side frame state (decoded from the control word) ----
     reg [31:0] f_addr;
