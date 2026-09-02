@@ -197,7 +197,16 @@ def run_next_stage(project, auto=False, gate_reason=""):
         "   26/09/02 踩過：讀回來的值一直是 0/x，差點去修讀取路徑，\n"
         "   但實際上是寫入引擎從沒送出過資料（AXI 寫通道握手 0 次），\n"
         "   讀取端的輸入本來就是未初始化的值。**在輸入是 x 的路徑上除錯，\n"
-        "   怎麼修都不會對。**\n")
+        "   怎麼修都不會對。**\n"
+        "12. **工具的語法不要猜 —— 問工具本身。** 任何指令的參數不確定，\n"
+        "   第一次就查，不要試第二次。試第二次代表你在猜，猜會花掉幾小時。\n"
+        "     Vivado/Tcl : `help <指令>`、`get_ipdefs *關鍵字*`、`llength`\n"
+        "     Python     : `python -c \"help(x)\"`、`dir(x)`\n"
+        "     CLI 工具   : `--help`、`man`\n"
+        "   26/09/02 踩過：`create_bd_cell` 的參數在 `-component_name` 和\n"
+        "   `-type ip` 之間來回試了 3 小時 48 分，一個 IP 都沒加成功。\n"
+        "   正解是 `-type ip -vlnv <VLNV>` —— `help create_bd_cell` 一行就有。\n"
+        "   **規則：同一個指令語法錯兩次，就停下來查說明，不要試第三次。**\n")
 
     with open(TASK_FILE, "w", encoding="utf-8") as f:
         f.write(prompt)
