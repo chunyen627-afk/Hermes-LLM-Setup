@@ -611,8 +611,15 @@ module xspi_slave #(
         .rd_clk(aclk),     .rd_en(ctl_rd_en),     .rd_data(ctl_rd_data), .rd_empty(ctl_rd_empty)
     );
 
-    // Pop the control FIFO on the cycle an engine latches it (f_valid high).
-    assign ctl_rd_en = (rd_state == RD_IDLE && f_valid && f_is_read) ||
+    wire head_is_read = ctl_rd_data[CTL_W-1];
+    wire head_is_reg  = ctl_rd_data[CTL_W-2];
+    wire [15:0] head_len_hw = ctl_rd_data[CTL_W-3 : CTL_W-18];
+    wire [31:0] head_addr   = ctl_rd_data[31:0];
+    wire head_is_reg_region = (head_addr < DDR_BASE);
+    wire [31:0] head_target_addr = head_is_reg_region ? (head_addr - REG_BASE) : (head_addr - DDR_BASE);
+
+    // Pop the control FIFO on the cycle an engine latches it.
+    assign ctl_rd_en = (rd_state == RD_IDLE && !ctl_rd_empty && head_is_read) ||
                        (wr_state == WR_IDLE && f_valid && !f_is_read);
 
     // Push timing: reads at end of P_ADDR (so the fetch starts during the dummy
@@ -743,7 +750,8 @@ module xspi_slave #(
     reg [15:0] rd_total_beats;           // total beats for this frame
 
     // Round the frame's byte count up to a whole number of beats (>= 1 beat).
-    wire [15:0] rd_frame_bytes = {4'd0, f_len_hw, 1'b0};   // hw_cnt * 2 bytes
+    wire [15:0] cur_rd_hw = (rd_state == RD_IDLE && !ctl_rd_empty && head_is_read) ? head_len_hw : f_len_hw;
+    wire [15:0] rd_frame_bytes = {4'd0, cur_rd_hw, 1'b0};   // hw_cnt * 2 bytes
     wire [15:0] rd_beats_raw   = (rd_frame_bytes + BEAT_BYTES - 16'd1) / BEAT_BYTES;
     wire [15:0] rd_total_beats_comb = (rd_beats_raw == 16'd0) ? 16'd1 : rd_beats_raw;
 
@@ -751,8 +759,9 @@ module xspi_slave #(
     wire [15:0] rd_len_bytes = rd_total_beats_comb * BEAT_BYTES;
 
     // rd_len_bytes is driven combinationally for the cycle rd_start pulses.
-    assign reg_rd_len = rd_target_reg  ? {4'd0, rd_len_bytes} : {RD_LEN_W{1'b0}};
-    assign ddr_rd_len = !rd_target_reg ? {4'd0, rd_len_bytes} : {RD_LEN_W{1'b0}};
+    wire cur_rd_is_reg = (rd_state == RD_IDLE) ? head_is_reg_region : rd_target_reg;
+    assign reg_rd_len = cur_rd_is_reg  ? {4'd0, rd_len_bytes} : {RD_LEN_W{1'b0}};
+    assign ddr_rd_len = !cur_rd_is_reg ? {4'd0, rd_len_bytes} : {RD_LEN_W{1'b0}};
 
     always @(posedge aclk or negedge arst_n) begin
         if (!arst_n) begin
@@ -770,8 +779,21 @@ module xspi_slave #(
             ddr_rd_start <= 1'b0;
 
             if (rd_state == RD_IDLE) begin
-                if (f_valid && f_is_read) begin
-                    // latch the frame and issue the read on the correct master
+                if (!ctl_rd_empty && head_is_read) begin
+                    // latch the frame and issue the read on the correct master immediately
+                    rd_state       <= RD_ACTIVE;
+                    rd_target_reg  <= head_is_reg_region;
+                    rd_hw_left     <= head_len_hw;
+                    rd_beat_cnt    <= 16'd0;
+                    rd_total_beats <= rd_total_beats_comb;
+                    if (head_is_reg_region) begin
+                        reg_rd_start <= 1'b1;
+                        reg_rd_addr  <= head_target_addr;
+                    end else begin
+                        ddr_rd_start <= 1'b1;
+                        ddr_rd_addr  <= head_target_addr;
+                    end
+                end else if (f_valid && f_is_read) begin
                     rd_state       <= RD_ACTIVE;
                     rd_target_reg  <= f_is_reg_region;
                     rd_hw_left     <= f_len_hw;
