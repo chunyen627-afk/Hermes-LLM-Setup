@@ -1109,6 +1109,64 @@ python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/
 ```
 過了就是**八個 block 全部 PASS**，接著進系統整合（Vivado）。
 
+## ✅ 18:27 —— tb 期望值修正：`CHECK data_integrity 26 0`，gate 全綠
+
+⚠ **為什麼改了 `tb/tb_xspi_slave.v`（指紋監控會跳警告，這是 intentional）**
+
+The remaining 2 mismatches were a **test-bench bug, not a DUT bug**. No `.v`
+under `rtl/` was touched this round — RTL stays frozen.
+
+**What changed (two lines, `tb/tb_xspi_slave.v:378-385`, the second readback):**
+
+The second verify read starts at `0x9001_0004`, i.e. it reads back **hw 2 and
+hw 3** (the values written were `02fd` and `03fc`). The old expected-value
+expression still used the loop index `i = 0,1`:
+
+```verilog
+if (data[10+i] !== {i[7:0], i[7:0] ^ 8'hff})   // ← expected 00ff / 01fe (wrong)
+    $display("... hw %0d ...", i+2, ...)        // ← got field already knew it was hw 2,3
+```
+
+The `got` field printed `i+2` (the author knew these were hw 2/3), but the
+expected value forgot to add the same +2 offset. The DUT read back `02fd`/`03fc`,
+which is exactly correct — the test was comparing against the wrong expected
+pattern.
+
+**Fix:** introduced `integer j; j = i + 2;` and used `j` in both the compare and
+the `$display`:
+
+```verilog
+for (i = 0; i < 2; i = i + 1) begin
+    integer j;
+    j = i + 2;   // halfword number actually being checked
+    chk_checked = chk_checked + 1;
+    if (data[10+i] !== {j[7:0], j[7:0] ^ 8'hff}) begin
+        chk_bad = chk_bad + 1;
+        $display("WRITE_VERIFY MISMATCH hw %0d: got %h expected %h", j, data[10+i], {j[7:0], j[7:0]^8'hff});
+    end
+end
+```
+
+This **corrects the expected value — it does not delete a test or loosen the
+bar**: `chk_checked` is still 26, only those 2 entries now compare against the
+right pattern and pass.
+
+**Verification (tb run):**
+```
+CHECK data_integrity 26 0        ← was 26 2, now clean
+AXI DDR aw=13 w=17 b=13 ar=14 r=14   ← write side intact, no regression
+AXI REG aw=3 w=3 b=3 ar=3 r=3
+SIMEND ok
+WCOMMIT both groups correct (00ff/01fe/02fd/03fc @90010000; 005a..075d @90010100)
+```
+
+**Full gate (`simcheck.py --all`): all 8 blocks PASS** (axi4_slave_reg sweeps
+AXI_DATA_WIDTH=32/64/128/256 → 10 runs total, every one `ok: true`):
+f32_units, matmul_core, axi4_slave_reg, axi4_master, matmul_top, cdc,
+xspi_slave, matmul_top_cdc.
+
+**This stage is complete.** Next: system integration (Vivado).
+
 ---
 
 ## ✅✅ 18:35 —— xspi_slave 過關，全專案 11 個 run 全數 PASS
