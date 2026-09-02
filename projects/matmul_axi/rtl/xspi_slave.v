@@ -359,10 +359,13 @@ module xspi_slave #(
                         // DDR read: drive the upper byte of the current halfword
                         // on this rising edge; capture the lower byte so the
                         // falling edge can present it.
+                        // Gate with !rd_rd_empty: while the FIFO is still being
+                        // filled by the aclk-side AXI read, hold the previous
+                        // value instead of driving xxxx onto the wire.
                         if (is_reg) begin
                             io_out  <= mr_read(addr_reg[7:0]);
                             rd_lo_q <= 8'h00;
-                        end else begin
+                        end else if (!rd_rd_empty) begin
                             io_out  <= rd_shift_out[15:8];   // upper byte (rising)
                             rd_lo_q <= rd_shift_out[7:0];    // lower byte (for fall)
                         end
