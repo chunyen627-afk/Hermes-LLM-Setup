@@ -143,6 +143,7 @@ module tb_xspi_slave;
     // ================= clocks =================
     reg [31:0] xspi_half;  // half-period of xspi_clk in ns
     reg [31:0] aclk_half;  // half-period of aclk in ns
+    integer     sck_pos_cnt;   // SCK posedge counter (unit-independent alignment)
     initial begin
         xspi_half = 10;  // 20ns period (50 MHz)
         aclk_half = 2;   // 4ns period (250 MHz)

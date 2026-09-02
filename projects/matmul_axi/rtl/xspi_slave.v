@@ -1,4 +1,5 @@
 // xspi_slave : xSPI -> AXI BRIDGE (NOT a memory).
+`timescale 1ns/1ps
 //
 // This is the block that lets the STM32H7S78-DK use its EXISTING OCTOSPI
 // memory-mapped config to reach the FPGA with zero firmware changes. The
