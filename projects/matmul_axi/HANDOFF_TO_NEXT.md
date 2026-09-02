@@ -182,6 +182,17 @@ done | sort -k2 | uniq -f1 -D
 
 **只有三種情況值得多花 token**：指標真的動了、出現退化、連續多輪原地打轉。
 
+### 派工歸規劃者，橋接器的彈窗已關（09-02）
+
+`Qwen3.8-27B\_planner_active` 旗標在、且 6 小時內更新過，`_stopmenu.py`
+的互動視窗就直接退出。規劃者的健康 Monitor 每 45 秒 touch 一次它。
+規劃者不在了（旗標過期）就自動退回手動模式，不用改任何設定。
+
+派工流程：Monitor 報 `IDLE`（quiet≥5min + slot 空 + log 靜止≥3min 三個同時）
+→ 重寫 `next_task.txt`（接它上一輪的正確診斷、列出凍結區、驗收數字）
+→ `python _stopmenu.py --reason done --project ... --auto`。
+⚠ `_stopmenu.py` 派完會把 `next_task.txt` 覆寫成舊模板，下次派工前要重寫。
+
 ### ⚠ 以下是推論，還沒驗證 —— 不要當守則
 
 - 「這樣能省 50%」：沒有對照組，09-01 那天規劃者反而**超支**了
