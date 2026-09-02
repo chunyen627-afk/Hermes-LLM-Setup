@@ -947,3 +947,55 @@ AXIWR beat=64 addr=00000100 data=015b005a   ✅
   你這次花了大段 ctx 在手推 `rd_lo_q` 在各個 edge 的值，
   那個用一行 `$display` 就有答案，而且不會推錯
 - ctx 到 60% 就把進度寫進 CHANGELOG
+
+---
+
+## 🎯 10:35 —— 你的診斷對了，但別動 `dummy_cnt`（那會毀掉寫入端）
+
+你這輪的診斷是對的：
+
+> the READ path ... entering P_DATA one cycle late
+> I can make the DUT enter P_DATA one cycle earlier for reads specifically,
+> while keeping writes at R11. This requires decoupling the read and write
+> phase timing — which is exactly "split the signal" (rule 10).
+
+**這段話你自己就答對了。照這個做。**
+
+### ⛔ 但不要走你接著考慮的那條路
+
+> the simplest correct fix: enter P_DATA at R10 for BOTH reads and writes
+> (dummy_cnt = dummy_n - 3)
+
+**不要改 `dummy_cnt`。** 那個值（`dummy_n - 2`）是寫入端四個修正之一，
+09-01 花了整天才調對，而且四個互相依賴。改成 `-3` 會讓寫入端整串偏移，
+把 `WCOMMIT` 那兩組毀掉 —— 你會退回昨天的狀態。
+
+規劃者實測基準（改動前後都要比對）：
+```
+WCOMMIT  00ff 01fe 02fd 03fc              ← 開頭無垃圾
+         005a 015b 0258 0359 045e 055f 065c 075d
+AXI DDR  aw=13 w=17 b=13
+CHECK    26 25
+```
+
+### 正確的做法就是你自己說的：拆開讀寫的相位時機
+
+讀取要提早一拍、寫入維持現狀 —— **這是兩件事，用兩個條件**。
+不要用同一個 `dummy_cnt` 去同時滿足兩者（那就是第 10 條規則講的問題，
+你昨天在 `wr_data_started` 上已經踩過一次，拆開才解決）。
+
+方向：`is_read` 已經是現成的訊號，讀取和寫入的 `P_DATA` 進入時機
+可以各自決定。自己判斷怎麼實作最乾淨。
+
+### ⚠ 這輪你又撞截斷了（第三次）
+
+原因跟前兩次一樣：**用長篇推理去手推訊號在各個 edge 的值**。
+你這輪推了 R10/R11 各個邊緣的 `w_hi`、`hw_pipe`、`wr_data_started`，
+推到一半被截斷。
+
+**那些用一行 `$display` 就有答案，而且不會推錯。**
+你自己在截斷前也寫了：
+
+> test empirically rather than hand-trace further
+
+對，就是這樣。**先印出來，再改。**（派工模板第 8 條）
