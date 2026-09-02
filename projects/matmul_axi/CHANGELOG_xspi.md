@@ -1054,3 +1054,57 @@ CHECK 從 25 變 26 看起來是退步，**但錯誤型態變乾淨了**：
 1. 讀取用 `-3`（寫入維持 `-2`）—— 這個狀態資料是對的，只差首筆
 2. 加一個**讀取端專用**的「丟掉第一筆 stale 輸出」閘門（鏡像 `wr_data_started`）
 3. 改之前先印：讀取 P_DATA 第一個 posedge 的 `rd_shift_out`、`rd_lo_q`、`io_out`、`rd_rd_empty`
+
+---
+
+## 🎉 18:03 —— 26 → 2！讀取端解決了（規劃者驗證：是真的）
+
+```
+CHECK data_integrity 26 2        ← 從 26 筆全錯到只剩 2 筆
+AXI DDR aw=13 w=17 b=13          ← 寫入端完好
+WCOMMIT 兩組全對、開頭無垃圾      ← 沒退化
+tb 驗收指紋 b8d20766db2b0402f81bc1f97de69750  ← 沒被動過，數字是真的
+```
+
+**讀寫相位拆分 + 首筆閘門的方向是對的，你做到了。**
+
+## 剩下的 2 筆是 **tb 自己的 bug**，不是 DUT 的問題
+
+```
+WRITE_VERIFY MISMATCH hw 2: got 02fd expected 00ff
+WRITE_VERIFY MISMATCH hw 3: got 03fc expected 01fe
+```
+
+看 `tb/tb_xspi_slave.v:378-385`：
+
+```verilog
+drive_frame(8'h20, 32'h9001_0004, 4, 10, 2, 1'b1);   // ← 位址跳過前 2 個 halfword
+for (i = 0; i < 2; i = i + 1) begin
+    if (data[10+i] !== {i[7:0], i[7:0] ^ 8'hff}) begin        // ← 期望值卻還用 i=0,1
+        $display("... got %h expected %h", i+2, data[10+i], {i[7:0], i[7:0]^8'hff});
+```
+
+第二次讀從 `0x9001_0004` 開始，讀的是 **hw 2、hw 3**（寫進去的值是
+`02fd`、`03fc`）。但期望值用 `i = 0,1` 算成 `00ff`、`01fe` ——
+**`i` 沒有加上 2 的偏移量**。
+
+`got` 欄位印的是 `i+2`（作者知道這裡是 hw 2、3），期望值卻忘了跟著加。
+
+**DUT 讀回來的 `02fd`/`03fc` 是正確的。**
+
+### 要做的
+
+修 tb 的期望值（兩處：判斷式和 `$display`），改成 `{(i+2)[7:0], (i+2)[7:0] ^ 8'hff}`
+或等價寫法。**這是修正錯誤的測試，不是放寬標準** —— 修完 `chk_checked`
+仍然是 26，只是那 2 筆會通過。
+
+⚠ 改 tb 一定要在 CHANGELOG 記一行說明為什麼，規劃者會核對
+（tb 驗收邏輯有指紋監控，改了會跳警告，那是正常的，說明清楚就好）。
+
+### 修完之後
+
+`CHECK data_integrity 26 0` → 跑完整 gate：
+```bash
+python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block xspi_slave
+```
+過了就是**八個 block 全部 PASS**，接著進系統整合（Vivado）。
