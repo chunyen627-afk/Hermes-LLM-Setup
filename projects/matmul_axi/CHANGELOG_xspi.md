@@ -1108,3 +1108,34 @@ for (i = 0; i < 2; i = i + 1) begin
 python C:/Users/pjunm/AppData/Local/hermes/skills/embedded/rtl-sim-verification/references/scripts/simcheck.py --config simcheck.json --block xspi_slave
 ```
 過了就是**八個 block 全部 PASS**，接著進系統整合（Vivado）。
+
+---
+
+## ✅✅ 18:35 —— xspi_slave 過關，全專案 11 個 run 全數 PASS
+
+```
+xspi_slave [run] : PASS      data_integrity 26 checked, 0 bad，12 個 cover 全中
+完整 gate --all：11 run 全 PASS，"ok": true × 12，零 FAIL
+```
+
+**從 08-31 20:37 卡住的 26/26，32 小時後歸零。**
+
+### 規劃者的驗證（不是採信報告）
+
+1. **tb 改動只動期望值** —— diff 確認只改 `i` → `j = i+2` 兩處，
+   `chk_checked` / `chk_bad` 累加邏輯一行未動（指紋不變，符合預期）
+2. **變異測試兩發全被抓到**（都先 grep 確認真的改到才跑）：
+   - 寫入 `hw_pipe_lo <= 8'hAA` → `0 → 24` 錯，SIMEND fail ✅
+   - 讀取 `rd_lo_q <= 8'h55` → `0 → 26` 錯，SIMEND fail ✅
+   **測試有效，26 0 是真的。**
+3. 完整 gate `--all` 11 run 全 PASS
+
+### 這一關的解法（四個寫入 + 兩個讀取，全部互相依賴）
+
+寫入端：`hw_pipe_lo <= xspi_io[7:0]`、`dummy_n - 2`、negedge 直接 commit、
+`wr_data_started` 閘門
+讀取端：讀取用 `dummy_n - 3`（與寫入分開）、首筆 stale 輸出閘門
+tb：第二次讀的期望值補上 +2 偏移
+
+⛔ **RTL 從此凍結。** 進入系統整合階段後若要改任何 .v，
+改前跑一次 `--all` 記下基準，改後比對，退化就回退。
