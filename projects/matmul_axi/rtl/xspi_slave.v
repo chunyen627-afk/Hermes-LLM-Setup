@@ -350,25 +350,21 @@ module xspi_slave #(
                 P_DATA: begin
                     if (is_read) begin
                         rd_frame_active <= 1'b1;   // host is reading: keep prefetching
-                        // Gate the first P_DATA posedge per read frame: at that
-                        // moment rd_shift_out still holds stale data and the
-                        // CDC-synced empty flag may not have cleared yet.
-                        // Mirror of wr_data_started on the write side.
-                        if (rd_data_started) begin
-                            // DDR read: drive the upper byte of the current
-                            // halfword on this rising edge; capture the lower
-                            // byte so the falling edge can present it.
-                            if (is_reg) begin
-                                io_out  <= mr_read(addr_reg[7:0]);
-                                rd_lo_q <= 8'h00;
-                            end else begin
-                                io_out  <= rd_shift_out[15:8];   // upper byte (rising)
-                                rd_lo_q <= rd_shift_out[7:0];    // lower byte (for fall)
-                            end
-                            io_oe <= 1'b1;
+                        // DDR read: drive the upper byte of the current halfword
+                        // on this rising edge; capture the lower byte so the
+                        // falling edge can present it. The read FIFO is show-ahead
+                        // (rd_shift_out already holds the next valid word before we
+                        // pop), and the aclk side has prefetched data before the
+                        // data phase begins, so every P_DATA posedge presents valid
+                        // data -- no first-cycle gate needed.
+                        if (is_reg) begin
+                            io_out  <= mr_read(addr_reg[7:0]);
+                            rd_lo_q <= 8'h00;
+                        end else begin
+                            io_out  <= rd_shift_out[15:8];   // upper byte (rising)
+                            rd_lo_q <= rd_shift_out[7:0];    // lower byte (for fall)
                         end
-                        $display("RCOMMIT t=%0d ph=4 oe=%b shift=%h rempty=%b rden=%b iout=%h started=%b",
-                                 $time, io_oe, rd_shift_out, rd_rd_empty, rd_rd_en, io_out, rd_data_started);
+                        io_oe <= 1'b1;
                     end else begin
                         // write: capture this cycle's upper byte.
                         io_oe <= 1'b0;
