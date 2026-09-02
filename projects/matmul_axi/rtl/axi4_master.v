@@ -87,7 +87,7 @@ module axi4_master #(
 
     // ================= AXI4 read-data channel =================
     input  wire                    m_axi_rvalid,
-    output reg                     m_axi_rready,
+    output wire                    m_axi_rready,
     input  wire [DATA_WIDTH-1:0]   m_axi_rdata,
     input  wire [1:0]              m_axi_rresp,
     input  wire                    m_axi_rlast,
