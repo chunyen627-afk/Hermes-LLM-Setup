@@ -1036,8 +1036,21 @@ module xspi_slave #(
     assign ddr_wr_data = wr_beat;
 
     // ================= read-FIFO read side (xspi_clk) =================
-    // The front-end consumes one halfword per data cycle during a read.
-    assign rd_rd_en = (phase == P_DATA) && is_read && !rd_rd_empty;
+    // Mirror of wr_data_started: the first P_DATA posedge of a read frame
+    // must be suppressed because (a) rd_shift_out still holds stale data from
+    // the previous frame, and (b) the CDC-synchronized empty flag may not have
+    // cleared yet (2 xspi_clk latency).  Skipping one cycle lets the FIFO
+    // present valid data by the second posedge.
+    reg rd_data_started;
+    always @(posedge xspi_clk or negedge arst_n) begin
+        if (!arst_n)
+            rd_data_started <= 1'b0;
+        else if (cs_fall)
+            rd_data_started <= 1'b0;          // reset on new frame
+        else if ((phase == P_DATA) && is_read)
+            rd_data_started <= 1'b1;          // high after first P_DATA posedge
+    end
+    assign rd_rd_en = (phase == P_DATA) && is_read && !rd_rd_empty && rd_data_started;
 
 
     assign xspi_busy      = (phase != P_IDLE);
