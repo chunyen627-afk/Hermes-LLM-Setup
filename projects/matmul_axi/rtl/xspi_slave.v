@@ -350,16 +350,10 @@ module xspi_slave #(
                         // DDR read: drive the upper byte of the current halfword
                         // on this rising edge; capture the lower byte so the
                         // falling edge can present it.
-                        // Gate with rd_data_pending (not rd_rd_empty): the
-                        // empty flag has a 2-cycle CDC sync delay, but the
-                        // RAM read port gives valid data immediately once
-                        // the aclk side writes it.  Use a 1-FF synced
-                        // "has data arrived" flag to unblock the drive
-                        // one cycle earlier than rd_rd_empty would.
                         if (is_reg) begin
                             io_out  <= mr_read(addr_reg[7:0]);
                             rd_lo_q <= 8'h00;
-                        end else if (rd_data_pending) begin
+                        end else begin
                             io_out  <= rd_shift_out[15:8];   // upper byte (rising)
                             rd_lo_q <= rd_shift_out[7:0];    // lower byte (for fall)
                         end
