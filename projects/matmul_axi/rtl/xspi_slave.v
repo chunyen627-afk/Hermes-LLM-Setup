@@ -622,7 +622,7 @@ module xspi_slave #(
     // the FIFO with stale/xxxx entries that shift subsequent DDR reads.
     always @(posedge xspi_clk or negedge arst_n) begin
         if (!arst_n)      ctl_push <= 1'b0;
-        else              ctl_push <= (is_read && !is_reg && phase == P_ADDR_D) ||
+        else              ctl_push <= (is_read && !is_reg && (phase == P_ADDR && addr_cnt == 2'd3)) ||
                                       (cs_rise && (phase == P_DATA) && !is_read);
     end
 
