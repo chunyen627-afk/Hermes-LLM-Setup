@@ -622,6 +622,20 @@ module xspi_slave #(
         .rd_clk(aclk),     .rd_en(ctl_rd_en),     .rd_data(ctl_rd_data), .rd_empty(ctl_rd_empty)
     );
 
+    // ---- debug: actual control-FIFO write/pop counts (not the overcounting print) ----
+    integer ctl_wr_cnt, ctl_rd_cnt;
+    initial begin ctl_wr_cnt = 0; ctl_rd_cnt = 0; end
+    always @(posedge xspi_clk) if (ctl_push) begin
+        ctl_wr_cnt <= ctl_wr_cnt + 1;
+        $display("CTLWR t=%0d n=%0d isread=%b isreg=%b len=%0d addr=%h",
+                 $time, ctl_wr_cnt, is_read, is_reg, ctl_len, addr_reg);
+    end
+    always @(posedge aclk) if (ctl_rd_en) begin
+        ctl_rd_cnt <= ctl_rd_cnt + 1;
+        $display("CTLRD t=%0d n=%0d head_isread=%b head_addr=%h",
+                 $time, ctl_rd_cnt, head_is_read, head_addr);
+    end
+
     wire head_is_read = ctl_rd_data[CTL_W-1];
     wire head_is_reg  = ctl_rd_data[CTL_W-2];
     wire [15:0] head_len_hw = ctl_rd_data[CTL_W-3 : CTL_W-18];
