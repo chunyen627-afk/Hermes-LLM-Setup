@@ -327,7 +327,16 @@ module xspi_slave #(
                     // dummy_n-2 (transition after 3 posedges) instead of dummy_n.
                     // Calibrated against tb drive_frame: upper_0 must be sampled
                     // at the FIRST P_DATA posedge.
-                    dummy_cnt <= (dummy_n >= 8'd2) ? (dummy_n - 8'd2) : 8'd0;
+                    //
+                    // READS need one more cycle of lead time: the DUT drives
+                    // io_out via NBA, and the TB samples 1ns after the posedge.
+                    // Entering P_DATA one cycle earlier (dummy_n-3) ensures the
+                    // first value the TB sees is hw_0, not a stale prefetch.
+                    // Writes keep dummy_n-2 (frozen, do not change).
+                    if (is_read)
+                        dummy_cnt <= (dummy_n >= 8'd3) ? (dummy_n - 8'd3) : 8'd0;
+                    else
+                        dummy_cnt <= (dummy_n >= 8'd2) ? (dummy_n - 8'd2) : 8'd0;
                     // Use dummy_n (the just-decoded value) for the phase decision,
                     // NOT dummy_cnt (which is still the old value due to non-blocking).
                     phase     <= (dummy_n != 8'd0) ? P_DUMMY : P_DATA;
