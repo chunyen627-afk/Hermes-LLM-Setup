@@ -815,15 +815,16 @@ module xspi_slave #(
                 // consume returned beats (from whichever master is active)
                 if (rd_target_reg && reg_rd_valid && reg_rd_ready) begin
                     rd_beat_cnt <= rd_beat_cnt + 16'd1;
-                    // stay ACTIVE until the push phase drains (one extra cycle
-                    // to push the high halfword of the last beat)
-                    if ((rd_beat_cnt == rd_total_beats - 16'd1) && !rd_push_phase)
-                        rd_state <= RD_IDLE;
                 end else if (!rd_target_reg && ddr_rd_valid && ddr_rd_ready) begin
                     rd_beat_cnt <= rd_beat_cnt + 16'd1;
-                    if ((rd_beat_cnt == rd_total_beats - 16'd1) && !rd_push_phase)
-                        rd_state <= RD_IDLE;
                 end
+                // Go idle only after ALL beats consumed AND the push phase has
+                // drained (the high halfword of the last beat is pushed on the
+                // cycle AFTER consumption, while rd_push_phase=1). Going idle on
+                // the consumption cycle itself would kill rd_wr_en before the
+                // high halfword gets pushed.
+                if (rd_beat_cnt >= rd_total_beats && !rd_push_phase && rd_beat_cnt > 0)
+                    rd_state <= RD_IDLE;
             end
         end
     end
