@@ -225,7 +225,11 @@ module tb_xspi_slave;
             for (i = 0; i < n_hw; i = i + 1) begin
                 if (is_read) begin
                     @(posedge xspi_clk); #1; hw[15:8] = xspi_io;   // upper (rising)
+                    $display("TBSAMP t=%0d POS i=%0d hi=%h | oe=%b io_out=%h shift=%h rempty=%b rden=%b",
+                             $time, i, xspi_io, dut.io_oe, dut.io_out, dut.rd_shift_out, dut.rd_rd_empty, dut.rd_rd_en);
                     @(negedge xspi_clk); #1; hw[7:0]  = xspi_io;   // lower (falling)
+                    $display("TBSAMP t=%0d NEG i=%0d lo=%h | oe=%b io_out=%h",
+                             $time, i, xspi_io, dut.io_oe, dut.io_out);
                     data[base+i] = hw;
                 end else begin
                     hw = data[base+i];
