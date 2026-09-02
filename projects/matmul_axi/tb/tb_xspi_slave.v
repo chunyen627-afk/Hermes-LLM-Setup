@@ -376,11 +376,15 @@ module tb_xspi_slave;
                     end
                 end
                 drive_frame(8'h20, 32'h9001_0004, 4, 10, 2, 1'b1);
+                // This read starts at 0x9001_0004, i.e. hw 2..3 (not 0..1).
+                // Expected value must use the same +2 offset as the data index.
                 for (i = 0; i < 2; i = i + 1) begin
+                    integer j;
+                    j = i + 2;   // halfword number actually being checked
                     chk_checked = chk_checked + 1;
-                    if (data[10+i] !== {i[7:0], i[7:0] ^ 8'hff}) begin
+                    if (data[10+i] !== {j[7:0], j[7:0] ^ 8'hff}) begin
                         chk_bad = chk_bad + 1;
-                        $display("WRITE_VERIFY MISMATCH hw %0d: got %h expected %h", i+2, data[10+i], {i[7:0], i[7:0]^8'hff});
+                        $display("WRITE_VERIFY MISMATCH hw %0d: got %h expected %h", j, data[10+i], {j[7:0], j[7:0]^8'hff});
                     end
                 end
             end
