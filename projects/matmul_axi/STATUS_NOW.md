@@ -53,9 +53,9 @@ tb 一個：第二次讀（`0x9001_0004`）的期望值補上 +2 偏移
 - 那些是加密 SystemVerilog、只能用 xsim，**絕不進模組層的 iverilog gate**
 - 時脈：`aclk` 100 MHz、`xspi_clk` 50 MHz，約束在 `constraints/timing.xdc`
 
-### ⚠ 已知風險
-`vivado-vcu118-setup` 記憶：**XCVU9P 要 Enterprise 授權**，
-Standard 版只有 4 顆 Alveo。系統整合前要先確認授權，否則卡在合成。
+### ✅ 授權已確認可用（09-02 18:40 規劃者實測）
+`get_parts xcvu9p*` 回 **70 個變體**、`get_board_parts *vcu118*` 回 3 筆
+（`xilinx.com:vcu118:part0:2.0`），不需授權檔。**08-31 那條「要 Enterprise」的記憶已作廢。**
 
 ## 規劃者工作守則
 見 `HANDOFF_TO_NEXT.md` 第六之二節。只做四件事：簡單查證 / 防重複 /
