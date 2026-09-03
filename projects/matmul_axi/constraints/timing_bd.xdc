@@ -11,11 +11,13 @@
 # 自己的 XDC（`create_clock` / `create_generated_clock`）。這份只補外部
 # 進來的、IP 管不到的部分。
 
-# ---- 板子的系統時脈（進 clk_wiz + MIG）----
-# VCU118 的 300 MHz 差動 sysclk。MIG 的 board preset 通常也會約束
-# c0_sys_clk，重複約束會被 Vivado 抱怨，所以先檢查再決定要不要留。
-# 若合成時報 "clock already exists"，把下面兩行註解掉。
-create_clock -name sysclk -period 3.333 [get_ports sysclk_p]
+# ---- 板子的系統時脈：不要在這裡約束 ----
+# MIG 的 board preset 已經約束過這個 port（時脈名 sysclk_p）。
+# 26/09/03 實測：自己再 create_clock -name sysclk 會得到
+#   CRITICAL WARNING: [Constraints 18-1056] Clock 'sysclk' completely
+#   overrides clock 'sysclk_p'.
+# 覆蓋掉 MIG 自己的約束是危險的（它比我們清楚 DDR4 要什麼），所以移除。
+# 合成結果證實 sysclk_p 那條路徑本來就有 +2.3 ns 餘裕。
 
 # ---- xSPI 主機介面：50 MHz（STM32 OCTOSPI 送進來的 SCK）----
 # 訊框是 DDR（雙緣取樣），資料率 100 Mbps/line。
