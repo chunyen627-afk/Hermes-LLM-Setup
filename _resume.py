@@ -162,6 +162,36 @@ def main():
     if n_dirty > 0:
         todo.append(f"有 {n_dirty} 個檔案沒存檔 —— 跑 _autosync.sh")
 
+    # ---------- 5b. 硬體需求訊號 ----------
+    section("5b. 要不要換硬體（累積證據，不是感覺）")
+    log = os.path.join(HERE, "bridge_status.log")
+    ctx_high = comp = 0
+    try:
+        txt = open(log, encoding="utf-8", errors="replace").read()
+        pcts = [int(x) for x in re.findall(r"\[ctx \] slot[01] [\d,]+ / [\d,]+ \((\d+)%\)", txt)]
+        ctx_high = len([p for p in pcts if p >= 90])
+        comp = len(re.findall(r"compacting|壓縮觸發", txt))
+        if pcts:
+            print(f"  ctx 取樣 {len(pcts)} 次：最高 {max(pcts)}%、平均 {sum(pcts)//len(pcts)}%")
+        print(f"  ctx >=90% 的次數: {ctx_high}    壓縮事件: {comp}")
+    except Exception as e:
+        print(f"  （讀不到 bridge_status.log: {e}）")
+
+    trunc_n = 0
+    try:
+        import glob
+        for f in glob.glob(os.path.join(HERE, "autorelay_*.log")):
+            trunc_n += open(f, encoding="utf-8", errors="replace").read().count("Response truncated")
+        print(f"  歷來截斷次數: {trunc_n}")
+    except Exception:
+        pass
+
+    if ctx_high >= 5:
+        print(f"  {WARN} ctx 常撐滿 -> 值得考慮 2080 Ti 22GB（約 2 萬，ctx 加倍）")
+        todo.append("ctx 反覆撐滿，該評估換卡了（見記憶 gpu-upgrade-plan）")
+    else:
+        print(f"  {OK} ctx 沒有壓力（<5 次撐滿）—— 不用花錢，見記憶 gpu-upgrade-plan")
+
     # ---------- 6. 該做的事 ----------
     section("6. 接下來")
     if todo:
