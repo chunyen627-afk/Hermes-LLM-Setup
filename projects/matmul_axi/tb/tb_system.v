@@ -54,6 +54,11 @@ module tb_system;
     localparam [31:0] DDR4_OFFSET  = 32'h7FFF_F000;  // top of the 2GB (31-bit) space
     localparam [31:0] FRAME_ADDR   = DDR_BASE + DDR4_OFFSET;  // 0x10FFF_F000
 
+    // Bounded calib wait: max sim-time to wait for c0_init_calib_complete before
+    // proceeding anyway (prints a warning). 5 ms of sim time is well beyond the
+    // expected MIG behavioral calibration duration.
+    localparam integer CALIB_CAP_US = 5_000;   // 5 ms of sim time
+
     // ---- Waveform dump (rule 6) --------------------------------------------
     // Dump ONLY the signals we need to debug the xSPI data path. A full
     // $dumpvars(0, tb_system) captures the entire MIG DDR4 PHY hierarchy
