@@ -171,7 +171,8 @@ module tb_system;
         end
     endtask
 
-    // Wait until both AXI masters inside xspi_slave are idle (bounded).
+    // Wait until both AXI masters inside xspi_slave are idle (bounded, time-based
+    // so it always terminates even if the DUT clocks were somehow stuck).
     task wait_axi_idle;
         integer t;
         begin
@@ -179,10 +180,10 @@ module tb_system;
             while ((dut.top_bd_i.xspi_slave.u_reg_master.rd_active ||
                     dut.top_bd_i.xspi_slave.u_reg_master.wr_active ||
                     dut.top_bd_i.xspi_slave.u_ddr_master.rd_active ||
-                    dut.top_bd_i.xspi_slave.u_ddr_master.wr_active) && t < 200000) begin
-                @(posedge dut.top_bd_i.mig_ddr4.c0_ddr4_ui_clk); t = t + 1;
+                    dut.top_bd_i.xspi_slave.u_ddr_master.wr_active) && t < 40000) begin
+                #1000; t = t + 1;   // 1 us poll, 40 ms cap
             end
-            if (t >= 200000) $display("WARN wait_axi_idle timeout");
+            if (t >= 40000) $display("WARN wait_axi_idle timeout");
         end
     endtask
 
@@ -199,20 +200,19 @@ module tb_system;
 
         // (1) Wait for MIG DDR4 calibration to complete. The behavioral model
         //     runs its full init/calibration sequence, which takes a while in
-        //     sim time -- this is expected, not a hang. Bounded guard so a
-        //     stuck calib still $finish-es with a clear message instead of
-        //     running forever.
+        //     sim time -- this is expected, not a hang. Both branches are pure
+        //     time-based so the fork/join always terminates even if ui_clk were
+        //     stuck (the polling branch exits early once calib asserts).
         fork
             begin : wait_calib
                 integer t;
                 t = 0;
-                while (dut.top_bd_i.mig_ddr4.c0_init_calib_complete !== 1'b1 && t < 2_000_000) begin
-                    @(posedge dut.top_bd_i.mig_ddr4.c0_ddr4_ui_clk); t = t + 1;
+                while (dut.top_bd_i.mig_ddr4.c0_init_calib_complete !== 1'b1 && t < 20_000) begin
+                    #1000; t = t + 1;   // 1 us poll, 20 ms cap
                 end
             end
             begin : calib_timeout
-                #20_000_000;   // 20 ms hard cap
-                $display("SYSCHECK calib TIMEOUT (no c0_init_calib_complete in window)");
+                #20_000_000;
             end
         join
         if (dut.top_bd_i.mig_ddr4.c0_init_calib_complete === 1'b1)
