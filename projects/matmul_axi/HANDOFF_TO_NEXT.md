@@ -182,6 +182,22 @@ done | sort -k2 | uniq -f1 -D
 
 **只有三種情況值得多花 token**：指標真的動了、出現退化、連續多輪原地打轉。
 
+### ✈ 接手/重啟時的起飛前檢查（09-03 建）
+
+**第一件事，不要憑記憶重建：**
+
+```bash
+cd "/c/Users/pjunm/OneDrive/Desktop/Qwen3.8-27B" && PYTHONIOENCODING=utf-8 python _resume.py
+```
+
+六節一次看完：llama-server / 27B（速度·slot·截斷·殭屍）/ RTL gate + tb 指紋 /
+block design 完成度 / git 存檔 / 該做的事，最後印出要重建哪兩個 Monitor。
+**只報告不動作** —— 收殭屍、派工仍是人的判斷。
+
+為什麼要這個（兩次漏掉的教訓）：
+- 速度告警沒接進 Monitor → 一個 23 小時的殭屍拖慢速度一整天沒察覺
+- 系統整合階段沒有進度指標 → 3 小時 48 分零產出，但「看起來很忙」
+
 ### 派工歸規劃者，橋接器的彈窗已關（09-02）
 
 `Qwen3.8-27B\_planner_active` 旗標在、且 6 小時內更新過，`_stopmenu.py`
