@@ -218,16 +218,12 @@ module tb_system;
         end
     end
 
-    // ---- Absolute watchdog: $finish if the test hasn't completed by a cap --
-    //     (keeps the event-driven calib wait from hanging forever on a bad run).
-    //     NOTE: delay must fit in a 32-bit Verilog integer (< 4.29e9 ps = 4.29 s).
-    initial begin
-        #4_000_000_000;   // 4 s of sim time (32-bit safe)
-        $display("SYSCHECK WATCHDOG: no $finish by t=%0t -- forcing finish", $time);
-        $finish;
-    end
-
     // ---- Reset + test sequence ---------------------------------------------
+    // NOTE on delays: xsim clamps very large delay literals (>= ~4e9) to ~0, so a
+    // single "#20_000_000_000" watchdog fires at t=0. All bounded waits below use
+    // small per-step literals in a counter loop instead -- always safe.
+    integer calib_waited_us;
+
     initial begin
         rst_n          = 1'b0;
         xspi_cs_n      = 1'b1;   // idle, not selected
@@ -238,14 +234,22 @@ module tb_system;
         #1000;              // hold reset for ~1us
         rst_n = 1'b1;       // deassert
 
-        // (1) Wait for MIG DDR4 calibration to complete. Event-driven: this
-        //     returns the instant c0_init_calib_complete asserts (no forced tail
-        //     wait). The full behavioral init/calibration takes a while in sim
-        //     time -- expected, not a hang. A separate watchdog initial below
-        //     $finish's at an absolute cap so this can never hang forever.
+        // (1) Wait for MIG DDR4 calibration to complete, bounded. Poll every 1 us
+        //     up to CALIB_CAP_US (20 ms of sim time). If it asserts, proceed; if
+        //     the cap is hit first, print a warning and proceed anyway so the test
+        //     still completes and prints numbers (per spec: "先求跑得完").
+        calib_waited_us = 0;
         $display("SYSCHECK waiting for MIG calib (t=%0t)...", $time);
-        wait (dut.top_bd_i.mig_ddr4.c0_init_calib_complete === 1'b1);
-        $display("SYSCHECK calib complete t=%0t", $time);
+        while ((dut.top_bd_i.mig_ddr4.c0_init_calib_complete !== 1'b1) &&
+               calib_waited_us < CALIB_CAP_US) begin
+            #1000;                  // 1 us step (small literal, xsim-safe)
+            calib_waited_us = calib_waited_us + 1;
+        end
+        if (dut.top_bd_i.mig_ddr4.c0_init_calib_complete === 1'b1)
+            $display("SYSCHECK calib complete t=%0t", $time);
+        else
+            $display("SYSCHECK WARN: calib not complete after %0d us -- proceeding anyway",
+                     calib_waited_us);
 
         // (2) Write 8 known halfwords to the DDR4 address via xSPI.
         for (i = 0; i < 8; i = i + 1) data[i] = {i[7:0], i[7:0] ^ 8'h5a};
