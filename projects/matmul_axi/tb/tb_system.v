@@ -208,31 +208,14 @@ module tb_system;
         #1000;              // hold reset for ~1us
         rst_n = 1'b1;       // deassert
 
-        // (1) Wait for MIG DDR4 calibration to complete. The behavioral model
-        //     runs its full init/calibration sequence, which takes a while in
-        //     sim time -- this is expected, not a hang. Both branches are pure
-        //     time-based so the fork/join always terminates even if ui_clk were
-        //     stuck (the polling branch exits early once calib asserts).
-        fork
-            begin : wait_calib
-                integer t;
-                t = 0;
-                // Poll every 1 us, up to 100 ms of sim time. MIG behavioral
-                // calibration can take a while in sim time (and many minutes of
-                // wall-clock CPU because the full RTL + DDR4 PHY tick at high
-                // frequency) -- give it plenty of room before giving up.
-                while (dut.top_bd_i.mig_ddr4.c0_init_calib_complete !== 1'b1 && t < 100_000) begin
-                    #1000; t = t + 1;   // 1 us poll, 100 ms cap
-                end
-            end
-            begin : calib_timeout
-                #100_000_000;   // 100 ms hard cap
-            end
-        join
-        if (dut.top_bd_i.mig_ddr4.c0_init_calib_complete === 1'b1)
-            $display("SYSCHECK calib complete t=%0t", $time);
-        else
-            $display("SYSCHECK calib NOT COMPLETE at t=%0t", $time);
+        // (1) Wait for MIG DDR4 calibration to complete. Event-driven: this
+        //     returns the instant c0_init_calib_complete asserts (no forced tail
+        //     wait). The full behavioral init/calibration takes a while in sim
+        //     time -- expected, not a hang. A separate watchdog initial below
+        //     $finish's at an absolute cap so this can never hang forever.
+        $display("SYSCHECK waiting for MIG calib (t=%0t)...", $time);
+        wait (dut.top_bd_i.mig_ddr4.c0_init_calib_complete === 1'b1);
+        $display("SYSCHECK calib complete t=%0t", $time);
 
         // (2) Write 8 known halfwords to the DDR4 address via xSPI.
         for (i = 0; i < 8; i = i + 1) data[i] = {i[7:0], i[7:0] ^ 8'h5a};
