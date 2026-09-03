@@ -55,9 +55,14 @@ module tb_system;
     localparam [31:0] FRAME_ADDR   = DDR_BASE + DDR4_OFFSET;  // 0x10FFF_F000
 
     // ---- Waveform dump (rule 6) --------------------------------------------
+    // Dump ONLY the signals we need to debug the xSPI data path. A full
+    // $dumpvars(0, tb_system) captures the entire MIG DDR4 PHY hierarchy
+    // (thousands of bits at ps precision) and makes sim take hours + GBs of VCD.
     initial begin
         $dumpfile("tb_system.vcd");
-        $dumpvars(0, tb_system);
+        $dumpvars(1, tb_system);                       // TB-level regs/wires
+        $dumpvars(0, dut.top_bd_i.xspi_slave.inst);     // xspi_slave internals
+        $dumpvars(0, dut.top_bd_i.mig_ddr4.c0_init_calib_complete);
     end
 
     // ---- sysclk: differential pair, p leads by half a period ----------------
