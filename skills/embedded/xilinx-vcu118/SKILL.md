@@ -1,6 +1,6 @@
 ---
 name: xilinx-vcu118
-description: "Xilinx VCU118 (Virtex UltraScale+ XCVU9P) + Vivado 合成、時序收斂、燒錄、上板驗證。要跑 synth_design、看 WNS/TNS、查資源用量（LUT/FF/DSP/BRAM）、寫時脈約束 xdc、處理跨時脈域假違例、或把 RTL 從模擬推進到硬體時，開工前必讀。含實測可用的 synth_check.tcl。"
+description: "Xilinx VCU118 (Virtex UltraScale+ XCVU9P) + Vivado 合成、時序收斂、block design（IP integrator、MIG DDR4、module reference、board automation、wrapper）、implement、產 bitstream、燒錄、上板驗證。要跑 synth_design、看 WNS/TNS、查資源用量（LUT/FF/DSP/BRAM）、寫時脈約束 xdc、處理跨時脈域假違例、或把 RTL 從模擬推進到硬體時，開工前必讀。含實測可用的 synth_check.tcl。"
 tags: [fpga, xilinx, vcu118, vivado, ultrascale, verilog, vhdl, hls]
 related_skills: [hardware-design-tradeoffs, rtl-sim-verification, embedded-ui-verification, stm32h7s78-dk]
 ---
@@ -272,6 +272,107 @@ until [ -f vivado_out/synth_summary.json ]; do sleep 8; done
 **合成前先過 iverilog** —— 它的 warning 直接指出哪一條 wire 沒被賦值，
 比 Vivado 的 elaboration 錯誤好讀太多。見 [[verify-rtl-drives-not-declares]]。
 
+
+---
+
+## 七之二、block design → bitstream（2026-09-03 實戰，一晚踩完的坑）
+
+這一節是 matmul_axi 從「RTL 合成過」走到「產出 .bit」的實際流程。
+順序不要跳，每一步都有踩過的坑。
+
+### 0. 執行環境：所有 Vivado 指令都經過帶 settings64 的 .bat
+
+```bat
+call "C:\Xilinx\Vivado4.2\settings64.bat"
+cd /d <專案根>
+vivado -mode batch -nojournal -nolog -source %1
+```
+Vivado **不繼承呼叫端 shell 的 PATH**。沒跑 settings64 時 `launch_simulation`
+只會回一句 `Spawn failed: Broken pipe`，真正的訊息（`xvlog 不是內部或外部命令`）
+要手動跑 `compile.bat` 才看得到。**包裝層的錯誤沒有資訊量，往下一層找 log。**
+
+### 1. 自家 RTL 用 module reference，不要打包成 IP
+
+```tcl
+set_property source_mgmt_mode All [current_project]   ;# 沒這行找不到 RTL
+create_bd_cell -type module -reference xspi_slave xspi_slave
+```
+module reference 一樣會把 AXI 散腳推斷成 interface pin（`m_axi`/`s_axi`），
+而且直接讀 `rtl/`。打包成 IP 之後同一個 .v 在專案裡會有**八份副本**
+（ip_repo、.gen/ipshared、.ip_user_files…），改 `rtl/` 合成完全不看，
+OOC 快取還會一直命中舊 netlist —— 為了那個快取繞了六種方法都沒用。
+
+### 2. board 相關的外部埠用 board automation，不要手接
+
+```tcl
+apply_board_connection -board_interface "ddr4_sdram_c1" -ip_intf "mig_ddr4/C0_DDR4" -diagram top_bd
+apply_board_connection -board_interface "default_250mhz_clk1" -ip_intf "mig_ddr4/C0_SYS_CLK" -diagram top_bd
+```
+- 合法的 board interface 名字用 `get_board_part_interfaces` 查，不要猜
+  （VCU118 的 DDR4 是 `ddr4_sdram_c1`，MIG 的系統時脈是 `default_250mhz_clk1`，
+  `default_sysclk1_300` 會被 MIG 拒絕）
+- `get_bd_automation_rules` **這個指令不存在**，`help apply_bd_automation` 才有用法
+- 在既有 bd 上刪/換 IP cell 會弄丟 board automation 建好的東西
+  （external port 的 BOARD_INTERFACE 關聯），動完要重新 `apply_board_connection`
+- reset 按鈕不在 automation 裡，自己從 board file 查腳位：
+  `data/xhub/boards/XilinxBoardStore/boards/Xilinx/vcu118/2.0/part0_pins.xml`
+  （CPU_RESET = L19, LVCMOS12, **高態有效**；MIG `sys_rst` 和 proc_sys_reset
+  `ext_reset_in` 預設也是高態有效，port 叫 `rst_n` 只是名字誤導）
+- 沒有 LOC/IOSTANDARD 的 port 在 write_bitstream 會被 DRC UCIO-1 / NSTD-1 擋下
+
+### 3. ⚠ wrapper 是產物：bd 的 port 一改就要重做
+
+```tcl
+make_wrapper -files [get_files */top_bd.bd] -top -import -force
+set_property top top_bd_wrapper [current_fileset]
+```
+**最貴的一課。** implement 報
+`[Mig 66-99] c0_sys_clk_p/n is/are not connected to top level instance`，
+在 bd 上補了四次時脈接線都沒用 —— bd 明明有 `default_250mhz_clk1_clk_p/n`
+外部埠，但 **wrapper 是舊的，沒有那兩個 port**，MIG 的時脈當然到不了 top。
+
+診斷法（30 秒）：比對兩邊的 port 清單
+```bash
+grep -E "^\s*(input|output|inout)" <.gen>/bd/top_bd/hdl/top_bd_wrapper.v
+# 對照 Tcl 的 get_bd_ports —— 少的那個就是答案
+```
+**報「沒接到 top / 找不到 port」時，先比對產物跟來源，不要去改設計。**
+
+### 4. 合成 / implement：啟動就退出，看檔案判斷完成
+
+```tcl
+reset_run synth_1
+launch_runs synth_1 -jobs 8        ;# 然後直接退出，不要 wait_on_run
+# 合成完（synth_1/top_bd_wrapper.dcp 出現）再：
+launch_runs impl_1 -to_step write_bitstream -jobs 8
+```
+- `wait_on_run` 會讓這版 Vivado 崩（EXCEPTION_ACCESS_VIOLATION，兩次）
+- 父行程退出後子行程「看起來不見了」但 run 有跑完 ——
+  **看 `synth_1/*.dcp`、`impl_1/*.bit`、`runme.log`，不看行程**
+- 輪詢用 mtime 比啟動時間新，不然會撿到上一次的舊檔
+- 合成 47 秒、implement 分鐘級到小時級，都背景跑
+
+### 5. 三層驗證，一層比一層嚴
+
+| 層 | 抓得到什麼 | 抓不到什麼 |
+|---|---|---|
+| iverilog 模擬 | 功能 | 多重驅動（Verilog 允許）|
+| 合成 | 時序、資源、latch | **多重驅動也抓不到** |
+| implement DRC | `MDRV-1` 多重驅動、IO 沒約束、MIG 時脈沒到 top | — |
+
+同一個 reg 在兩個 always 賦值：模擬過、合成過、**implement 才擋**。
+DDR 介面「上升緣寫高 byte、下降緣寫低 byte」要拆成兩個 reg 再用相位選。
+
+### 6. 不要在 bd 專案裡自己約束板子時脈
+
+MIG 的 board preset 已經 `create_clock` 了 sysclk，自己再寫一次會
+`Clock 'sysclk' completely overrides clock 'sysclk_p'`。只約束 IP 管不到的
+外部時脈（xspi_clk）和跨域 `set_clock_groups -asynchronous`。
+
+### 7. xsim 帶 MIG 不要用 RTL 模型
+
+DDR4 校準要跑 25 小時模擬時間。要嘛 `SELECTED_SIM_MODEL tlm`，要嘛跳過模擬
+直接合成（連線正確性由 `validate_bd_design` 背書）。
 
 ---
 
