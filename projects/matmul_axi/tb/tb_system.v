@@ -197,6 +197,35 @@ module tb_system;
         end
     endtask
 
+    // ---- Diagnostic heartbeat (rule 6/8: print what you can't see) --------
+    // Every 1 ms of sim time, report whether MIG calibration is progressing or
+    // stuck. Prints the calib signal's raw value plus a UI-clock toggle count so
+    // we can tell "calibrating slowly" from "UI clock never running / calib x".
+    reg [31:0] ui_clk_toggles;
+    initial begin
+        ui_clk_toggles = 0;
+        forever begin
+            #1_000_000;   // 1 ms of sim time
+            $display("SYSCHECK diag t=%0t calib=%b ui_clk_toggles_since_last_ms=%0d",
+                     $time, dut.top_bd_i.mig_ddr4.c0_init_calib_complete, ui_clk_toggles);
+            ui_clk_toggles = 0;
+        end
+    end
+    initial begin
+        forever begin
+            @(posedge dut.top_bd_i.mig_ddr4.c0_ddr4_ui_clk);
+            ui_clk_toggles = ui_clk_toggles + 1;
+        end
+    end
+
+    // ---- Absolute watchdog: $finish if the test hasn't completed by a cap --
+    //     (keeps the event-driven calib wait from hanging forever on a bad run)
+    initial begin
+        #20_000_000_000;   // 20 s of sim time
+        $display("SYSCHECK WATCHDOG: no $finish by t=%0t -- forcing finish", $time);
+        $finish;
+    end
+
     // ---- Reset + test sequence ---------------------------------------------
     initial begin
         rst_n          = 1'b0;
