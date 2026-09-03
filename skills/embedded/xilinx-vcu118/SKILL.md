@@ -320,6 +320,15 @@ apply_board_connection -board_interface "default_250mhz_clk1" -ip_intf "mig_ddr4
   `ext_reset_in` 預設也是高態有效，port 叫 `rst_n` 只是名字誤導）
 - 沒有 LOC/IOSTANDARD 的 port 在 write_bitstream 會被 DRC UCIO-1 / NSTD-1 擋下
 
+### 2之二. board preset 會把 MIG 的速度鎖死
+
+`C0_DDR4_BOARD_INTERFACE = ddr4_sdram_c1` 時，`C0.DDR4_TimePeriod` 變成
+disabled parameter：`set_property` 只回一句 WARNING `[BD 41-721] ... ignored`，
+**值不變、指令不報錯**（設完一定要 get_property 回讀確認）。
+切 Custom 可以改，但切回 preset 立刻還原；留在 Custom 會失去 MIG 自動產生的
+DDR4 腳位 xdc。**想用降 ui_clk 來閃時序問題，在 board preset 下走不通** ——
+時序要在 RTL 解（切 pipeline）。
+
 ### 3. ⚠ wrapper 是產物：bd 的 port 一改就要重做
 
 ```tcl
@@ -352,6 +361,16 @@ launch_runs impl_1 -to_step write_bitstream -jobs 8
 - 輪詢用 mtime 比啟動時間新，不然會撿到上一次的舊檔
 - 合成 47 秒、implement 分鐘級到小時級，都背景跑
 
+### 4之二. 合成的 WNS 不算數，只信 `*_timing_summary_routed.rpt`
+
+matmul_axi 實測：合成報 sysclk **+2.3 ns**，implement 繞完 **-0.5 ns**
+（16 級邏輯的位址路徑，3.69 ns 塞不進 3.33 ns）。差了快 3 ns。
+「300 MHz 收斂」在合成階段說出口，繞線後被推翻。驗收只看
+`impl_1/<top>_timing_summary_routed.rpt` 的 **Intra Clock Table**（每個時脈一行 WNS）。
+時脈腳不是 GCIO 又用 `CLOCK_DEDICATED_ROUTE FALSE` 時，插入延遲會到 7 ns，
+所有對外 I/O 時序都會吃到這 7 ns —— 用 `xspi_clk ? hi : lo` 這種「時脈當 mux 選擇」
+的 DDR 輸出寫法會直接變成時脈腳→LUT→輸出腳的組合路徑，要改用 `ODDRE1`。
+
 ### 5. 三層驗證，一層比一層嚴
 
 | 層 | 抓得到什麼 | 抓不到什麼 |
@@ -368,6 +387,18 @@ DDR 介面「上升緣寫高 byte、下降緣寫低 byte」要拆成兩個 reg �
 MIG 的 board preset 已經 `create_clock` 了 sysclk，自己再寫一次會
 `Clock 'sysclk' completely overrides clock 'sysclk_p'`。只約束 IP 管不到的
 外部時脈（xspi_clk）和跨域 `set_clock_groups -asynchronous`。
+
+### 6之二. 非 GCIO 腳當時脈：placer 會擋，用 impl-only xdc 降級
+
+外部時脈（例如 xspi_clk 的 AK29）不是全域時脈專用腳（GCIO）時，placer 報
+`[Place 30-675] rule_gclkio_bufg ... IO Clock Placer failed`。腳位是板子接線
+決定的改不了，低頻時脈（50 MHz）可以照它給的範例降級：
+```tcl
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets xspi_clk_IBUF_inst/O]
+```
+⚠ 這個 net 名字**合成後才存在**，放在一般 xdc 會在合成時報找不到。
+放獨立檔並設 `set_property USED_IN_SYNTHESIS false [get_files impl_only.xdc]`。
+錯誤訊息裡就有完整的 set_property 範例，照抄，不要自己想 net 名。
 
 ### 7. xsim 帶 MIG 不要用 RTL 模型
 
