@@ -312,17 +312,28 @@ bd 預設 OOC-per-IP，**每個 module_ref cell 都有自己的 OOC 合成 run**
 
 查證（每次改 RTL 後必做）：
 ```bash
-ls -la --time-style=+%m-%d\ %H:%M sys_int.runs/*_synth_1/*.dcp   # 要比 rtl/*.v 新
-grep "_stub.v" sys_int.runs/synth_1/runme.log                      # 有 = 用快取
-grep -c ODDRE1 sys_int.runs/synth_1/*utilization_synth.rpt        # 你加的原語要出現
+ls -la --time-style=+%m-%d\ %H:%M sys_int.runs/*_synth_1/*.dcp   # 每個 cell 的 OOC dcp 要比 rtl/*.v 新
+grep -E "=> OSERDESE3|ODDRE1" sys_int.runs/top_bd_xspi_slave_2_synth_1/runme.log  # 原語要在「那個 cell 的」OOC log
 ```
-修法：
+（`synth_1` 的 log 永遠會有 `_stub.v`、頂層 utilization 不含 OOC cell 內部 —— 那兩個不是證據。）
+
+修法 A（保留 OOC）：`reset_run top_bd_xspi_slave_2_synth_1` + `reset_target/generate_target` + 重合成。
+**修法 B（推薦）：整個 bd 改 Global 合成**，快取問題直接消失：
 ```tcl
-update_module_reference [get_bd_cells xspi_slave]
-reset_run top_bd_xspi_slave_2_synth_1     ;# 那個 cell 的 OOC run
-reset_target all $bd ; generate_target all $bd
-reset_run synth_1 ; launch_runs synth_1
+set_property SYNTH_CHECKPOINT_MODE None [get_files */top_bd.bd]
+reset_target all $bd ; generate_target all $bd ; make_wrapper ... -force ; reset_run synth_1
 ```
+代價是每次合成連 MIG 一起重跑（多幾分鐘），換來「改了就是改了」。
+
+### 1之三. ⚠ OOC 會把模組內的三態轉成邏輯（Synth 8-5799）
+
+module_ref 的 cell 裡有 `assign io = oe ? out : 1'bz`（inout 匯流排）時，OOC 合成
+看不到頂層 IOBUF，會報 `CRITICAL WARNING: Converted tricell instance to logic`，
+**高阻態被拿掉，FPGA 永遠驅動那條線** —— 上板時主機一寫就撞線，模擬完全看不出來。
+2026-09-04 在 xspi_slave 的 OOC log 發現，之前三顆 bitstream 都帶著這個問題。
+這也是改 Global 合成的理由：三態要在頂層 inout 才會變成 IOBUF 的 T 腳。
+驗證：頂層合成 log 不能有 8-5799，utilization 的 IOBUF 數要等於 inout 位元數。
+
 **「合成過了」不代表「合成的是你改的那份」** —— 看 dcp 日期，不看 log 尾巴的 successfully。
 
 ### 2. board 相關的外部埠用 board automation，不要手接
