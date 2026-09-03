@@ -75,7 +75,10 @@ module tb_system;
     genvar gi;
     generate
         for (gi = 0; gi < 8; gi = gi + 1) begin : io_master_gen
-            assign xspi_io[gi] = dut.top_bd_i.xspi_slave.io_oe ? 1'bz : xspi_io_master[gi];
+            // io_oe lives one level down: the BD instantiates the IP wrapper
+            // top_bd_xspi_slave_0 (cell name "xspi_slave"), which instantiates
+            // the raw xspi_slave module as ".inst".
+            assign xspi_io[gi] = dut.top_bd_i.xspi_slave.inst.io_oe ? 1'bz : xspi_io_master[gi];
         end
     endgenerate
 
@@ -177,10 +180,12 @@ module tb_system;
         integer t;
         begin
             t = 0;
-            while ((dut.top_bd_i.xspi_slave.u_reg_master.rd_active ||
-                    dut.top_bd_i.xspi_slave.u_reg_master.wr_active ||
-                    dut.top_bd_i.xspi_slave.u_ddr_master.rd_active ||
-                    dut.top_bd_i.xspi_slave.u_ddr_master.wr_active) && t < 40000) begin
+            // The IP wrapper cell is "xspi_slave"; the raw module (with the two
+            // axi4_master instances) is ".inst". rd_busy/wr_busy are axi4_master ports.
+            while ((dut.top_bd_i.xspi_slave.inst.u_reg_master.rd_busy ||
+                    dut.top_bd_i.xspi_slave.inst.u_reg_master.wr_busy ||
+                    dut.top_bd_i.xspi_slave.inst.u_ddr_master.rd_busy ||
+                    dut.top_bd_i.xspi_slave.inst.u_ddr_master.wr_busy) && t < 40000) begin
                 #1000; t = t + 1;   // 1 us poll, 40 ms cap
             end
             if (t >= 40000) $display("WARN wait_axi_idle timeout");
