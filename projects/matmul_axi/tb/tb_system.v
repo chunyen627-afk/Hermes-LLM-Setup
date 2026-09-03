@@ -207,12 +207,16 @@ module tb_system;
             begin : wait_calib
                 integer t;
                 t = 0;
-                while (dut.top_bd_i.mig_ddr4.c0_init_calib_complete !== 1'b1 && t < 20_000) begin
-                    #1000; t = t + 1;   // 1 us poll, 20 ms cap
+                // Poll every 1 us, up to 100 ms of sim time. MIG behavioral
+                // calibration can take a while in sim time (and many minutes of
+                // wall-clock CPU because the full RTL + DDR4 PHY tick at high
+                // frequency) -- give it plenty of room before giving up.
+                while (dut.top_bd_i.mig_ddr4.c0_init_calib_complete !== 1'b1 && t < 100_000) begin
+                    #1000; t = t + 1;   // 1 us poll, 100 ms cap
                 end
             end
             begin : calib_timeout
-                #20_000_000;
+                #100_000_000;   // 100 ms hard cap
             end
         join
         if (dut.top_bd_i.mig_ddr4.c0_init_calib_complete === 1'b1)
