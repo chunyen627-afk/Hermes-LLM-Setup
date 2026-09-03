@@ -302,6 +302,29 @@ module reference 一樣會把 AXI 散腳推斷成 interface pin（`m_axi`/`s_axi
 （ip_repo、.gen/ipshared、.ip_user_files…），改 `rtl/` 合成完全不看，
 OOC 快取還會一直命中舊 netlist —— 為了那個快取繞了六種方法都沒用。
 
+### 1之二. ⚠ module_ref 也有快取：bd 的 OOC run
+
+bd 預設 OOC-per-IP，**每個 module_ref cell 都有自己的 OOC 合成 run**
+（`<bd>_<cell>_N_synth_1/<cell>.dcp`）。改了 `rtl/*.v` 之後 `synth_1` 只合成一個
+`_stub.v` 黑盒，邏輯從那顆舊 dcp 連進來 —— 改了等於沒改，而且合成 0 error。
+2026-09-04 實測：修完兩條時序路徑、gate 全綠、合成乾淨，routed 報告卻跟修前
+**一模一樣**，才發現 OOC dcp 還是前一天的。
+
+查證（每次改 RTL 後必做）：
+```bash
+ls -la --time-style=+%m-%d\ %H:%M sys_int.runs/*_synth_1/*.dcp   # 要比 rtl/*.v 新
+grep "_stub.v" sys_int.runs/synth_1/runme.log                      # 有 = 用快取
+grep -c ODDRE1 sys_int.runs/synth_1/*utilization_synth.rpt        # 你加的原語要出現
+```
+修法：
+```tcl
+update_module_reference [get_bd_cells xspi_slave]
+reset_run top_bd_xspi_slave_2_synth_1     ;# 那個 cell 的 OOC run
+reset_target all $bd ; generate_target all $bd
+reset_run synth_1 ; launch_runs synth_1
+```
+**「合成過了」不代表「合成的是你改的那份」** —— 看 dcp 日期，不看 log 尾巴的 successfully。
+
 ### 2. board 相關的外部埠用 board automation，不要手接
 
 ```tcl
