@@ -447,6 +447,24 @@ set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets xspi_clk_IBUF_inst/O]
 放獨立檔並設 `set_property USED_IN_SYNTHESIS false [get_files impl_only.xdc]`。
 錯誤訊息裡就有完整的 set_property 範例，照抄，不要自己想 net 名。
 
+### 6之三. 序列 MAC 在 300 MHz 收不了：每元素 K 拍 + multicycle，不要動累加順序
+
+要跟 C 版 bit-exact，FP32 的 mul→add 必須照原順序串行累加，這條 acc→acc 迴圈
+在 3.3 ns 內塞不下。做法：資料路徑維持組合邏輯，餵它的暫存器（acc、讀出的 w/x、i/j）
+每 K 拍才更新一次（`ph` 計數器），xdc 給 `set_multicycle_path K`。
+```tcl
+set mac_sinks [get_cells -hier -filter {NAME =~ *u_core/acc_reg* || NAME =~ *u_core/xout_reg*}]
+set mac_1cyc  [get_cells -hier -filter {NAME =~ *u_core/ph_reg* || NAME =~ *u_core/state_reg*}]
+set_multicycle_path 3 -setup -to $mac_sinks
+set_multicycle_path 2 -hold  -to $mac_sinks
+set_multicycle_path 1 -setup -from $mac_1cyc -to $mac_sinks   ;# 每拍變的 enable 訊號設回單週期
+set_multicycle_path 0 -hold  -from $mac_1cyc -to $mac_sinks
+```
+⚠ 用「終點」寫法的理由：BRAM 同步讀的輸出暫存器（`w_q <= w_mem[addr]`）合成後**被吸進
+RAMB36E2**，`get_cells *w_q_reg*` 是空的（synth log：`Empty from list`）。先用 `open_run synth_1`
++ `get_cells -hier` 看真正的 cell 名再寫約束。BRAM 推斷的條件：寫入在**沒有 reset** 的 always、
+讀取是 registered；寫在 async-reset 區塊會得到 `RAM is sensitive to asynchronous reset`。
+
 ### 7. xsim 帶 MIG 不要用 RTL 模型
 
 DDR4 校準要跑 25 小時模擬時間。要嘛 `SELECTED_SIM_MODEL tlm`，要嘛跳過模擬
