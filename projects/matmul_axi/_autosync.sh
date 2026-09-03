@@ -13,13 +13,17 @@ T="$D/projects/matmul_axi"
 [ -d "$P" ] || { echo "找不到專案目錄"; exit 1; }
 
 # 同步（只複製存證該有的東西，不含 out/ 這種產物）
-mkdir -p "$T/rtl" "$T/tb" "$T/constraints"
+mkdir -p "$T/rtl" "$T/tb" "$T/constraints" "$T/vivado"
 cp "$P"/rtl/*.v "$T/rtl/" 2>/dev/null
 cp "$P"/tb/*.v  "$T/tb/"  2>/dev/null
 cp "$P"/constraints/*.xdc "$T/constraints/" 2>/dev/null
+# Vivado 的 .tcl 腳本（流程重建的關鍵，Vivado 產物如 .runs/.gen 不存）
+cp "$P"/vivado/*.tcl "$T/vivado/" 2>/dev/null
+cp "$P"/_runsim.bat "$T/" 2>/dev/null
 for f in simcheck.json ARCHITECTURE.md HANDOFF.md NOTE_FROM_USER.md \
-         SPEC_xspi_bridge.md STATUS_NOW.md README.md \
-         CHANGELOG_xspi.md HANDOFF_TO_NEXT.md TODO.md; do
+         SPEC_xspi_bridge.md SPEC_system_integration.md SPEC_stm32_integration.md \
+         STATUS_NOW.md README.md \
+         CHANGELOG_xspi.md CHANGELOG_sysint.md HANDOFF_TO_NEXT.md TODO.md; do
     [ -f "$P/$f" ] && cp "$P/$f" "$T/" 2>/dev/null
 done
 
