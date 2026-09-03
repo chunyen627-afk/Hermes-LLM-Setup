@@ -212,7 +212,14 @@ module xspi_slave #(
     reg [7:0]  dummy_n;           // dummy count for the current frame
     reg        is_read;           // current frame is a read (slave drives IO)
     reg        is_reg;            // current frame targets the mode-register file
-    reg [7:0]  io_out;            // value to drive on IO when reading
+    // DDR output: the upper byte is registered on the rising edge and the lower
+    // byte on the falling edge. They must be TWO separate registers selected by
+    // the clock phase -- writing one `io_out` reg from both a posedge and a
+    // negedge block simulates fine but synthesises to two physical registers
+    // driving one net, which implement's DRC MDRV-1 rejects. 2026-09-03.
+    reg [7:0]  io_out_hi;         // driven on the rising edge (upper byte)
+    reg [7:0]  io_out_lo;         // driven on the falling edge (lower byte)
+    wire [7:0] io_out = xspi_clk ? io_out_hi : io_out_lo;
     reg        io_oe;             // output enable (drive IO high-Z otherwise)
 
     // DDR address bytes, MSB first. Captured across 2 cycles x 2 edges.
@@ -256,7 +263,7 @@ module xspi_slave #(
             dummy_n   <= 8'd0;
             is_read   <= 1'b0;
             is_reg    <= 1'b0;
-            io_out    <= 8'h00;
+            io_out_hi <= 8'h00;    // io_out_lo is reset by the negedge block
             io_oe     <= 1'b0;
             w_valid   <= 1'b0;
             rd_lo_q   <= 8'h00;
@@ -358,11 +365,11 @@ module xspi_slave #(
                         // data phase begins, so every P_DATA posedge presents valid
                         // data -- no first-cycle gate needed.
                         if (is_reg) begin
-                            io_out  <= mr_read(addr_reg[7:0]);
-                            rd_lo_q <= 8'h00;
+                            io_out_hi <= mr_read(addr_reg[7:0]);
+                            rd_lo_q   <= 8'h00;
                         end else begin
-                            io_out  <= rd_shift_out[15:8];   // upper byte (rising)
-                            rd_lo_q <= rd_shift_out[7:0];    // lower byte (for fall)
+                            io_out_hi <= rd_shift_out[15:8]; // upper byte (rising)
+                            rd_lo_q   <= rd_shift_out[7:0];  // lower byte (for fall)
                         end
                         io_oe <= 1'b1;
                     end else begin
@@ -387,14 +394,15 @@ module xspi_slave #(
     // ---- falling-edge handling (DDR data capture) ----
     always @(negedge xspi_clk or negedge arst_n) begin
         if (!arst_n) begin
-            w_lo    <= 8'h00;
+            w_lo      <= 8'h00;
+            io_out_lo <= 8'h00;
         end else begin
             case (phase)
                 P_DATA: begin
                     if (!is_read)
                         w_lo <= xspi_io[7:0];      // lower byte of write data
                     else
-                        io_out <= rd_lo_q;         // lower byte (falling)
+                        io_out_lo <= rd_lo_q;      // lower byte (falling)
                 end
                 default: ;
             endcase
