@@ -311,8 +311,17 @@ module axi4_master #(
             WR_W: begin
                 // W beats streamed by the W channel. When the last beat of this
                 // burst is accepted, move to B.
-                if (m_axi_wvalid && m_axi_wready && wr_w_left == 9'd1)
-                    wr_state <= WR_B;
+                //
+                // The wr_w_left decrement lives here, not in its own always
+                // block: a second block assigning the same reg elaborates and
+                // simulates fine but synthesises to two physical registers
+                // driving one net -- implement's DRC MDRV-1 rejects it
+                // (37 errors, one per bit). 2026-09-03.
+                if (m_axi_wvalid && m_axi_wready) begin
+                    wr_w_left <= wr_w_left - 9'd1;
+                    if (wr_w_left == 9'd1)
+                        wr_state <= WR_B;
+                end
             end
             WR_B: begin
                 if (m_axi_bvalid && m_axi_bready) begin
@@ -382,14 +391,6 @@ module axi4_master #(
     assign m_axi_wdata  = wdata_fifo[wdata_rptr[WR_FIFO_AW-2:0]];
     assign m_axi_wstrb  = {DATA_WIDTH/8{1'b1}};
     assign m_axi_wlast  = (wr_state == WR_W) && !wdata_empty && (wr_w_left == 9'd1);
-
-    // ---- decrement the per-burst W beat counter ----
-    always @(posedge aclk or negedge aresetn) begin
-        if (!aresetn)
-            wr_w_left <= 9'd0;
-        else if ((wr_state == WR_W) && m_axi_wvalid && m_axi_wready)
-            wr_w_left <= wr_w_left - 9'd1;
-    end
 
     // ---- B response / write done ----
     assign m_axi_bready = 1'b1;
