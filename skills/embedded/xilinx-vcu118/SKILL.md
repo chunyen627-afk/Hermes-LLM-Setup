@@ -336,6 +336,19 @@ module_ref 的 cell 裡有 `assign io = oe ? out : 1'bz`（inout 匯流排）時
 
 **「合成過了」不代表「合成的是你改的那份」** —— 看 dcp 日期，不看 log 尾巴的 successfully。
 
+### 1之四. ⚠ module_ref 的參數不會自己帶進來：逐一核對 CONFIG.*
+
+`create_bd_cell -type module -reference` 建出來的 cell **全用 Verilog 預設參數**。
+matmul_axi 的 `matmul_top` 有 `EXTERNAL_DATA`（0 = 驗證用 `$readmemh` 路徑、AXI master 閒置；
+1 = 真的從 DDR4 串流），bd 沒設 → 三顆 bitstream 時序/DRC 全過，功能是空的。
+症狀：合成 log 出現 `[Synth 8-4445] could not open $readmem data file` ——
+**那不是可以忽略的警告，是「合成到驗證路徑」的證據。**
+```tcl
+list_property [get_bd_cells matmul_top] CONFIG.*        ;# 空的 = 全預設
+set_property CONFIG.EXTERNAL_DATA 1 [get_bd_cells matmul_top]
+```
+整合層的驗收要多一條：每個自家模組的「模式開關」參數都被明確設定，並在 synth log 對照。
+
 ### 2. board 相關的外部埠用 board automation，不要手接
 
 ```tcl
