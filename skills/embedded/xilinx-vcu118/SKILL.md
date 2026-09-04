@@ -349,6 +349,18 @@ set_property CONFIG.EXTERNAL_DATA 1 [get_bd_cells matmul_top]
 ```
 整合層的驗收要多一條：每個自家模組的「模式開關」參數都被明確設定，並在 synth log 對照。
 
+### 1之五. ⚠ incremental synthesis 會沿用舊 netlist
+
+專案的 synth_1 若有 `AutoIncrementalCheckpoint`（log 第一頁會有
+`read_checkpoint -auto_incremental -incremental .../utils_1/imports/synth_1/*.dcp`），改了 RTL 加的暫存器
+可能**根本沒進 netlist**（2026-09-04：加了三組暫存器，implement 後 `get_cells` 一顆都沒有，時序反而更差）。
+```tcl
+set_property AUTO_INCREMENTAL_CHECKPOINT 0 [get_runs synth_1]
+set_property INCREMENTAL_CHECKPOINT {} [get_runs synth_1]
+```
+**改完 RTL 的驗證多一步**：合成後 `open_run synth_1` + `get_cells -hier -filter {NAME =~ *你加的名字*}`，
+數量 > 0 才進 implement。「合成成功」三個字在這裡也一樣沒有資訊量。
+
 ### 2. board 相關的外部埠用 board automation，不要手接
 
 ```tcl
