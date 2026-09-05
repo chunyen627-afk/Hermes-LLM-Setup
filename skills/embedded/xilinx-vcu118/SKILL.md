@@ -420,6 +420,11 @@ launch_runs impl_1 -to_step write_bitstream -jobs 8
 - 輪詢用 mtime 比啟動時間新，不然會撿到上一次的舊檔
 - 合成 47 秒、implement 分鐘級到小時級，都背景跑
 
+### 4之三. ⚠ 長任務（合成/Implement）執行期間千萬不可結束對話輪次
+
+Hermes CLI 在 assistant 結束該輪（沒有工具在前景運行）時會退出行程，Windows 會強制終止該 session 產生的所有背景子行程（包括 Vivado implement）。
+**正確做法**：啟動 implement 後，**必須在同一個對話輪次內**，使用前景命令每 120~240 秒輪詢一次 `sys_int.runs/impl_1/runme.log` 與檔案生成情況（例如 `sleep 180; tail -20 ...`，單次執行時間不超過 600 秒上限），直到 `.bit` 與 `.rpt` 真正生成，完成全晶片時序確認後才結束該輪進行報告！
+
 ### 4之二. 合成的 WNS 不算數，只信 `*_timing_summary_routed.rpt`
 
 matmul_axi 實測：合成報 sysclk **+2.3 ns**，implement 繞完 **-0.5 ns**
@@ -482,7 +487,67 @@ RAMB36E2**，`get_cells *w_q_reg*` 是空的（synth log：`Empty from list`）�
 DDR4 校準要跑 25 小時模擬時間。要嘛 `SELECTED_SIM_MODEL tlm`，要嘛跳過模擬
 直接合成（連線正確性由 `validate_bd_design` 背書）。
 
+### 8. ⚠ 時脈架構與降頻最佳實踐：嚴禁加 clk_wiz 分接板載時脈，善用 MIG 內建 addn_ui_clkout1 + SmartConnect 雙時脈（2026-09-05 實戰血淚）
+
+當加速器或 RTL 邏輯較深無法在 300 MHz（MIG `ui_clk`）收斂時，需要將計算邏輯降至 100 MHz。
+
+#### ❌ 致命陷阱：加 clk_wiz_0 + axi_clock_converter
+- 直覺做法是建一顆 `clk_wiz_0` 產生 100 MHz，並加一顆 `axi_clock_converter` 做跨時脈。
+- 但 VCU118 板載 250 MHz 差分引腳（`default_250mhz_clk1`）是專用硬體 Pin，在 UltraScale+ 架構下一組實體差分 Pin **只能接進一顆硬體專用 IBUFDS**（MIG 內部已自帶一顆）。
+- 如果讓 `clk_wiz_0` 也接板載差分 port，合成會過（因為合成不做實體 IO 綁定），但一進 Implement 的 `place_design` 就會硬體致命報錯：
+  ```text
+  ERROR: [Place 30-602] IO port 'default_250mhz_clk1_clk_p' is driving multiple buffers.
+  ```
+- 如果改由 `clk_wiz` 產生 250 MHz 餵給 MIG，MIG 的硬體 PLL 拒絕接受非專用 GC Pin 來源；若單端反接更會破壞校準。**這條路完全走不通。**
+
+####  黃金標準解法：MIG 內建輔助時脈 + SmartConnect 雙時脈（對照專案 matmul_axi_p 驗證成功）
+**完全不需要 `clk_wiz`，也完全不需要手動加 `axi_clock_converter`！**
+1. **時脈來源**：MIG DDR4 內部原本就配置有專用 MMCM，並原生提供輔助時脈輸出：`mig_ddr4/addn_ui_clkout1`（預設即為 100 MHz）！
+2. **加速器連線**：將 `mig_ddr4/addn_ui_clkout1` 接至 `matmul_top/aclk`、`xspi_slave/aclk`、`rst_aclk/slowest_sync_clk` 以及 `axi_smc/aclk`。
+3. **跨時脈轉換**：將 SmartConnect 設為雙時脈（`NUM_CLKS 2`），由 SmartConnect 內部自動實例化高效非同步時脈轉換器：
+   - `axi_smc/aclk` 接 100 MHz（`addn_ui_clkout1`）
+   - `axi_smc/aclk1` 接 300 MHz（`mig_ddr4/c0_ddr4_ui_clk`）
+4. **復位產生**：加一顆 `proc_sys_reset`（命為 `rst_ui`）專門負責 300 MHz 域的 MIG AXI 復位。
+5. **板載引腳**：板端 250 MHz 差分 Pin 依然只有 MIG 唯一驅動，**零 Buffer 衝突、零硬體 DRC 違規**。
+6. **實測成果**：全面收斂時序（WNS = +0.088 ns，TNS = 0.000 ns），順利產生 Bitstream！
+
+#### 標準 Tcl 範本（直接使用）：
+```tcl
+# 1. 拔除原本在 ui_clk (300M) 上的 100M 元件
+set uinet [get_bd_nets -of_objects [get_bd_pins mig_ddr4/c0_ddr4_ui_clk]]
+foreach p {axi_smc/aclk xspi_slave/aclk matmul_top/aclk rst_aclk/slowest_sync_clk} {
+  catch {disconnect_bd_net $uinet [get_bd_pins $p]}
+}
+
+# 2. SmartConnect 開啟雙時脈
+set_property CONFIG.NUM_CLKS 2 [get_bd_cells axi_smc]
+connect_bd_net [get_bd_pins mig_ddr4/addn_ui_clkout1] \
+               [get_bd_pins axi_smc/aclk] \
+               [get_bd_pins xspi_slave/aclk] \
+               [get_bd_pins matmul_top/aclk] \
+               [get_bd_pins rst_aclk/slowest_sync_clk]
+connect_bd_net [get_bd_pins mig_ddr4/c0_ddr4_ui_clk] [get_bd_pins axi_smc/aclk1]
+
+# 3. 建立 300 MHz (ui_clk) 的專用復位模組 rst_ui
+set rui [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ui]
+connect_bd_net [get_bd_pins mig_ddr4/c0_ddr4_ui_clk] [get_bd_pins rst_ui/slowest_sync_clk]
+connect_bd_net [get_bd_pins mig_ddr4/c0_ddr4_ui_clk_sync_rst] [get_bd_pins rst_ui/ext_reset_in]
+connect_bd_net [get_bd_pins mig_ddr4/c0_init_calib_complete] [get_bd_pins rst_ui/dcm_locked]
+set arst [get_bd_nets -quiet -of_objects [get_bd_pins mig_ddr4/c0_ddr4_aresetn]]
+if {[llength $arst] > 0} { disconnect_bd_net $arst [get_bd_pins mig_ddr4/c0_ddr4_aresetn] }
+connect_bd_net [get_bd_pins rst_ui/peripheral_aresetn] [get_bd_pins mig_ddr4/c0_ddr4_aresetn]
+
+# 4. 驗證、更新 wrapper、重跑合成
+validate_bd_design
+save_bd_design
+reset_target all [get_files */top_bd.bd]
+generate_target all [get_files */top_bd.bd]
+make_wrapper -files [get_files */top_bd.bd] -top -import -force
+set_property top top_bd_wrapper [current_fileset]
+```
+
 ---
+
 
 ## 八、HLS（如果要用）
 
