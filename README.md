@@ -1,5 +1,9 @@
 # Hermes + 本地 LLM 完整環境
 
+## 珍珠挖礦專區（2026-10-24）
+
+**[Pearl / Kryptex 多機部署、保護與還原規則](mining/README.md)**：保留 LLM 環境，先完成第一筆 MAX 入帳，再部署單張 RTX 3070 與雙 RTX 2060。含可攜式保護程式、設定範本及給其他電腦代理的接手提示。帳號、錢包、私人設定及執行檔不提交 GitHub。
+
 ## 目前使用配置（2026-10-19）
 
 已切換至 **Swift 1.5 Qwen3.8 Flash Next Abliterated IQ3_XXS + Strata 0.1.45**，由 Hermes 桌面版使用。

@@ -1,0 +1,9 @@
+config.local.json
+runtime/
+.venv/
+logs/
+__pycache__/
+*.zip
+*.exe
+*.lock
+*-backup*

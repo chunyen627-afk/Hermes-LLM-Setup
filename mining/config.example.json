@@ -1,0 +1,14 @@
+{
+  "mining_user": "YOUR_KRYPTEX_MINING_USERNAME",
+  "worker": "rtx3070",
+  "gpus": [
+    {"index": 0, "uuid": "GPU-REPLACE_WITH_ACTUAL_UUID", "power_w": 100, "core_mhz": 750}
+  ],
+  "ai_stop_command": [],
+  "ai_ports": [8001, 8188, 8189, 5000],
+  "idle_memory_mib": 2048,
+  "warn_c": 78,
+  "stop_c": 80,
+  "no_share_seconds": 900,
+  "validated_for_this_machine": false
+}
