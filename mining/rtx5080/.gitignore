@@ -1,0 +1,11 @@
+config.local.json
+config.quiet.json
+runtime/
+.venv/
+logs/
+backup/
+__pycache__/
+*.log
+*.lock
+*.exe
+*.zip
