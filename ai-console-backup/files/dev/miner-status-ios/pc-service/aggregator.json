@@ -1,0 +1,294 @@
+{
+  "bind_ip": "10.35.219.64",
+  "port": 18786,
+  "allowed_networks": [
+    "10.35.219.0/24"
+  ],
+  "office": {
+    "machine_id": "office",
+    "display_name": "office",
+    "worker": null,
+    "state_file": "C:\\Users\\pjunm\\Pearl-mining\\panel-mining-state.json",
+    "control": {
+      "console_dir": "C:\\Users\\pjunm\\Strata",
+      "console_python": "C:\\Users\\pjunm\\Strata\\.venv\\Scripts\\pythonw.exe"
+    }
+  },
+  "rtx": {
+    "machine_id": "rtx5080",
+    "display_name": "RTX 5080",
+    "worker": "rtx5080",
+    "url": "http://10.35.219.158:18785/status",
+    "poll_seconds": 5,
+    "timeout_seconds": 4,
+    "control": {
+      "ssh": {
+        "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+        "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+        "user": "user",
+        "host": "10.35.219.158"
+      },
+      "root": "C:\\Users\\user\\Documents\\Codex\\2026-10-24\\https-github-com-chunyen627-afk-hermes\\outputs\\Pearl-mining"
+    }
+  },
+  "notify": {
+    "server": "https://ntfy.sh",
+    "topic": "<REDACTED>",
+    "check_seconds": 15,
+    "offline_after_seconds": 1800,
+    "stopped_after_seconds": 1800,
+    "hot_after_seconds": 1800,
+    "attention_after_seconds": null
+  },
+  "earnings": {
+    "account": "<REDACTED>",
+    "pool_coin": "prl",
+    "coin": "PRL",
+    "poll_seconds": 600,
+    "workers": {
+      "office": "llmrig",
+      "rtx5080": "rtx5080",
+      "laptop3070": "laptop3070",
+      "office2": "rtx3070"
+    },
+    "electricity_billed": {
+      "office": false,
+      "rtx5080": true,
+      "laptop3070": true,
+      "office2": false
+    },
+    "worker_poll_seconds": 120
+  },
+  "temperature_limits": {
+    "office": 82,
+    "rtx5080": 75,
+    "laptop3070": 80,
+    "vcu118": 85,
+    "office2": 82
+  },
+  "control": {
+    "token": "<REDACTED>",
+    "machines": [
+      "laptop3070",
+      "office",
+      "rtx5080",
+      "vcu118",
+      "office2"
+    ]
+  },
+  "node_watch": {
+    "interval_seconds": 1800,
+    "min_gain_ms": 80,
+    "min_ratio": 1.5,
+    "cooldown_seconds": 21600,
+    "nodes": [
+      "prl-hk.kryptex.network",
+      "prl-sg.kryptex.network",
+      "prl.kryptex.network"
+    ],
+    "machines": {
+      "office": {
+        "display_name": "office",
+        "log_dir": "C:\\Users\\pjunm\\Pearl-mining",
+        "switch_path": "C:\\Users\\pjunm\\Pearl-mining\\SWITCH_NODES"
+      },
+      "rtx5080": {
+        "display_name": "RTX 5080",
+        "ssh": {
+          "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+          "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+          "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+          "user": "user",
+          "host": "10.35.219.158"
+        },
+        "log_dir": "C:\\Users\\user\\Documents\\Codex\\2026-10-24\\https-github-com-chunyen627-afk-hermes\\outputs\\Pearl-mining\\logs",
+        "switch_path": "C:\\Users\\user\\Documents\\Codex\\2026-10-24\\https-github-com-chunyen627-afk-hermes\\outputs\\Pearl-mining\\SWITCH_NODES"
+      },
+      "laptop3070": {
+        "display_name": "RTX 3070 筆電",
+        "ssh": {
+          "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+          "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+          "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+          "user": "pjunman",
+          "host": "10.35.219.180"
+        },
+        "log_dir": "C:\\Users\\pjunm\\Pearl-mining\\logs",
+        "switch_path": "C:\\Users\\pjunm\\Pearl-mining\\SWITCH_NODES"
+      },
+      "office2": {
+        "display_name": "辦公室 2",
+        "ssh": {
+          "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+          "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+          "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+          "user": "pjunm",
+          "host": "10.35.219.79"
+        },
+        "log_dir": "C:\\Users\\pjunm\\Pearl-mining\\logs",
+        "switch_path": "C:\\Users\\pjunm\\Pearl-mining\\SWITCH_NODES"
+      }
+    }
+  },
+  "advice": {
+    "hold_hours": 6,
+    "interval_seconds": 600,
+    "machines": {
+      "laptop3070": {
+        "display_name": "RTX 3070 筆電",
+        "hashrate_th": 43.5,
+        "gpu_w": 61,
+        "extra_watts": 10,
+        "adapter_efficiency": 0.88,
+        "idle_watts": 20,
+        "count_idle": true,
+        "start_at": 300,
+        "stop_below": 250,
+        "initial": "rest",
+        "auto": true
+      },
+      "rtx5080": {
+        "display_name": "RTX 5080",
+        "hashrate_th": 208,
+        "gpu_w": 222,
+        "extra_watts": 50,
+        "adapter_efficiency": 0.9,
+        "count_idle": false,
+        "start_at": 1000,
+        "stop_below": 720,
+        "initial": "mine",
+        "wall_watts": 380
+      }
+    }
+  },
+  "laptop": {
+    "machine_id": "laptop3070",
+    "display_name": "RTX 3070 筆電",
+    "worker": "laptop3070",
+    "status_path": "C:\\Users\\pjunm\\Pearl-mining\\laptop-status.json",
+    "poll_seconds": 10,
+    "timeout_seconds": 8,
+    "ssh": {
+      "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+      "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+      "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+      "user": "pjunman",
+      "host": "10.35.219.180"
+    },
+    "stop_path": "C:\\Users\\pjunm\\Pearl-mining\\STOP",
+    "guardian": {
+      "kill_at": 82,
+      "shutdown_at": 90,
+      "stale_seconds": 90
+    },
+    "guard_path": "C:\\Users\\pjunm\\Pearl-mining\\laptop_miner.ps1",
+    "guard_console": "C:\\Users\\pjunm\\Pearl-mining\\guard-console.log",
+    "hide_when_off": true,
+    "wake": {
+      "mac": "<REDACTED>",
+      "broadcasts": [
+        "192.168.31.255",
+        "255.255.255.255"
+      ],
+      "relay": {
+        "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+        "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+        "user": "user",
+        "host": "10.35.219.158"
+      }
+    }
+  },
+  "auto_mine": {
+    "check_seconds": 60,
+    "machines": {
+      "laptop3070": {
+        "user_idle_minutes": 15,
+        "start_net_per_hour": 1.0,
+        "off_day_start_net_per_hour": 0.0,
+        "night_start_net_per_hour": 0.5,
+        "night_hours": [0, 6],
+        "shutdown_when_idle": true,
+        "idle_shutdown_minutes": 30,
+        "stop_net_per_hour": 0.0,
+        "min_state_minutes": 60
+      }
+    }
+  },
+  "vcu118": {
+    "machine_id": "vcu118",
+    "display_name": "VCU118 FPGA",
+    "worker": "vcu118",
+    "log_dir": "C:\\Users\\pjunm\\dev\\qtc-fpga\\logs",
+    "poll_seconds": 10,
+    "timeout_seconds": 5,
+    "control_command": [
+      "C:\\Users\\pjunm\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "C:\\Users\\pjunm\\dev\\qtc-fpga\\host\\mining_ctl.py"
+    ]
+  },
+  "earnings_qtc": {
+    "pool_coin": "qtc",
+    "coin": "QTC",
+    "poll_seconds": 600,
+    "worker_poll_seconds": 120,
+    "workers": {
+      "vcu118": "vcu118"
+    },
+    "electricity_billed": {
+      "vcu118": false
+    }
+  },
+  "kryptex_relay": {
+    "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+    "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+    "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+    "user": "user",
+    "host": "10.35.219.158"
+  },
+  "office2": {
+    "machine_id": "office2",
+    "display_name": "辦公室 2",
+    "worker": "rtx3070",
+    "status_path": "C:\\Users\\pjunm\\Pearl-mining\\miner-status.json",
+    "poll_seconds": 10,
+    "timeout_seconds": 8,
+    "ssh": {
+      "client": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+      "key": "C:\\Users\\pjunm\\.ssh\\tn12_home",
+      "known_hosts": "C:\\Users\\pjunm\\.ssh\\known_hosts",
+      "user": "pjunm",
+      "host": "10.35.219.79"
+    },
+    "stop_path": "C:\\Users\\pjunm\\Pearl-mining\\STOP",
+    "guardian": {
+      "kill_at": 84,
+      "shutdown_at": 90,
+      "stale_seconds": 90
+    },
+    "guard_path": "C:\\Users\\pjunm\\Pearl-mining\\laptop_miner.ps1",
+    "guard_console": "C:\\Users\\pjunm\\Pearl-mining\\guard-console.log"
+  },
+  "giving_way": {
+    "rtx5080": {
+      "normal_th": 200,
+      "min_gpu_w": 100
+    }
+  },
+  "keep_mining": {
+    "machines": [
+      "office",
+      "office2",
+      "vcu118"
+    ],
+    "cool_below_c": 60,
+    "delays_seconds": [
+      60,
+      300,
+      900,
+      1800
+    ],
+    "warn_after": 3
+  }
+}

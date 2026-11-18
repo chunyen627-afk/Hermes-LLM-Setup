@@ -1,0 +1,22 @@
+{
+  "pc_name": "辦公室",
+  "bind_ip": "<this PC's ZeroTier address>",
+  "port": 18790,
+  "allowed_networks": ["<ZeroTier network, e.g. 10.x.y.0/24>"],
+  "token": "<install.ps1 writes 43 random characters here>",
+  "notify": {
+    "server": "https://ntfy.sh",
+    "topic": "<a private, random ntfy topic: treat it like a password>",
+    "line": {"name": "me", "owner": true, "channel_access_token": "<optional: a LINE Messaging API long-lived channel access token>", "to": "<your LINE user ID, starts with U; or a list of IDs, each counted as one message>", "tags": ["bulb"]},
+    "line_can_also_be_a_list": [{"name": "me", "owner": true, "channel_access_token": "<account 1 token>", "to": "U...", "tags": ["bulb"]}, {"name": "friend", "channel_access_token": "<a friend's own account token>", "to": "U...", "tags": ["bulb"]}],
+    "pictures": {"git": {"url": "https://github.com/<owner>/<public repo>.git", "branch": "pictures", "name": "<committer>", "email": "<committer email>", "exe": "C:\\Program Files\\Git\\mingw64\\bin\\git.exe"}, "keep_days": 7, "_or": "\"cloudflared\": \"<path to cloudflared.exe>\" with \"port\": 18791 serves them from this PC through a quick tunnel instead; or a fixed \"base_url\""}
+  },
+  "idle_seconds": 60,
+  "alerts": {"usage_percent": 80, "context_percent": 80},
+  "screen": true,
+  "camera": {"low_long_side": 640, "low_quality": 50, "long_side": 960, "quality": 70, "idle_seconds": 5, "stamp": true},
+  "light_watch": {"region": [0.76, 0.45, 0.03, 0.09], "name": "玻璃門", "interval_seconds": 30, "on_above": 130, "off_below": 90, "hours": [8, 18], "weekdays_only": true, "reference": "light_reference.jpg", "anchor": [0.73, 0.35, 0.14, 0.26]},
+  "lan": {"enabled": true, "prefix": 24, "bind_ip": "<optional: this PC's Wi-Fi/Ethernet address; found from the default route when left out>"},
+  "drive_windows": true,
+  "claude": {"context_windows": {"claude-opus-5": 1000000}}
+}

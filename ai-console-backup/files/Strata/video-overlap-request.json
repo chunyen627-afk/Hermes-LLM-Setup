@@ -1,0 +1,8 @@
+{
+  "request_id": "strata-overlap-20261007-2210",
+  "image_path": "C:/Users/pjunm/ComfyUI-H3/input/h3_duck_input.png",
+  "prompt_en": "The yellow rubber ducks gently sway from side to side. Preserve their original appearance and background. One continuous shot. Audio: quiet natural ambience. No text, no subtitles.",
+  "seconds": 3,
+  "steps": 8,
+  "seed": 202610072210
+}

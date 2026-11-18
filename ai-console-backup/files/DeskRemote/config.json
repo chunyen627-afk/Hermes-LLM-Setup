@@ -1,0 +1,93 @@
+{
+  "pc_name": "OFFICE_OPEN",
+  "bind_ip": "10.35.219.64",
+  "port": 18790,
+  "allowed_networks": [
+    "10.35.219.0/24"
+  ],
+  "token": "<REDACTED>",
+  "notify": {
+    "server": "https://ntfy.sh",
+    "topic": "<REDACTED>",
+    "line": [
+      {
+        "name": "我",
+        "owner": true,
+        "channel_access_token": "<REDACTED>",
+        "to": "<LINE_USER_ID>",
+        "tags": [
+          "bulb"
+        ]
+      },
+      {
+        "name": "Jupiter",
+        "owner": false,
+        "channel_access_token": "<REDACTED>",
+        "to": "<LINE_USER_ID>",
+        "tags": [
+          "bulb"
+        ]
+      }
+    ],
+    "pictures": {
+      "git": {
+        "url": "https://github.com/chunyen627-afk/mobile-apps.git",
+        "branch": "pictures",
+        "name": "chunyen627-afk",
+        "email": "266673425+chunyen627-afk@users.noreply.github.com",
+        "exe": "C:\\Program Files\\Git\\mingw64\\bin\\git.exe"
+      },
+      "keep_days": 7
+    }
+  },
+  "idle_seconds": 0,
+  "clipboard": {
+    "folder": "G:\\我的雲端硬碟\\剪貼簿"
+  },
+  "lan": {
+    "enabled": true
+  },
+  "light_watch": {
+    "region": [
+      0.762,
+      0.372,
+      0.03,
+      0.05
+    ],
+    "name": "右邊玻璃門上方窗",
+    "interval_seconds": 30,
+    "on_above": 140,
+    "off_below": 110,
+    "hours": [
+      8,
+      19
+    ],
+    "weekdays_only": true,
+    "reference": "light_reference.jpg",
+    "anchor": [
+      0.69,
+      0.28,
+      0.07,
+      0.22
+    ],
+    "_door_region_until_1112": {
+      "region": [
+        0.761,
+        0.448,
+        0.029,
+        0.093
+      ],
+      "anchor": [
+        0.729,
+        0.352,
+        0.135,
+        0.259
+      ],
+      "on_above": 95,
+      "off_below": 70
+    }
+  },
+  "repair": {
+    "script": "C:\\Users\\pjunm\\AppData\\Local\\DeskRemote\\repair\\repair.ps1"
+  }
+}

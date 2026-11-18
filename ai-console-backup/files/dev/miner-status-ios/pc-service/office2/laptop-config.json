@@ -1,0 +1,1 @@
+{"account": "<REDACTED>", "worker": "rtx3070", "status_file": "miner-status.json", "memory_mhz": 5001, "start_ceiling_mhz": 1200, "max_ceiling_mhz": 1500, "min_ceiling_mhz": 800, "slow_at_c": 76, "stop_at_c": 82, "cool_at_c": 72, "cpu_max_percent": 100, "fan_min_percent": 50, "miner": "srbminer", "srb_exe": "srbminer-3.8.6\\SRBMiner-Multi-3-8-6\\SRBMiner-MULTI.exe"}

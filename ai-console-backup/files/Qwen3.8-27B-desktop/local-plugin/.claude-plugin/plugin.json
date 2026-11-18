@@ -1,0 +1,5 @@
+{
+  "name": "qwen38-local",
+  "description": "Qwen3.8-27B 本地模型專用技能包（遊戲素材、PPT、網頁設計）",
+  "version": "1.0.0"
+}

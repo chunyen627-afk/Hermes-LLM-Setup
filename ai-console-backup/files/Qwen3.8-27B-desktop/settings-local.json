@@ -1,0 +1,14 @@
+{
+  "env": {
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "163840",
+    "MAX_THINKING_TOKENS": "0",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "BASH_DEFAULT_TIMEOUT_MS": "180000",
+    "BASH_MAX_TIMEOUT_MS": "600000"
+  },
+  "effortLevel": "low",
+  "alwaysThinkingEnabled": false,
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  }
+}

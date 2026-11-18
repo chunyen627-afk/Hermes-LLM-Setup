@@ -1,0 +1,977 @@
+{
+ "schema": 1,
+ "tool": "tools/iq_pack.py",
+ "compat_bf16": true,
+ "source_shards": [
+  {
+   "name": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "size": 39771812960
+  },
+  {
+   "name": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "size": 36056143040
+  }
+ ],
+ "tensors": [
+  {
+   "name": "blk.0.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "c367d894cf8ce1f3681d71f4b6fbb4c419cbae8c41fb2593232b40bd49bd7455"
+  },
+  {
+   "name": "blk.0.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "ba7149360e4a67d47eeaaf89846e7f6313568a91aa169b8e7bde36f2934d04ab"
+  },
+  {
+   "name": "blk.1.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "8a9a3697015e8f9158539be07d9d250c9c54c70a0d3b943bfb93bd157208781d"
+  },
+  {
+   "name": "blk.1.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "6d89a6fdddd7e2e0b5754cd2c30c6500ec5eca45603e2ad3edde3c5643065392"
+  },
+  {
+   "name": "blk.2.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "328a0ad6a00c2519e8c4aa20175a41208d8a64844cae4c8658112514721ce773"
+  },
+  {
+   "name": "blk.2.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "120c7c51cbc0b4911b3b24881fd1a2f0588768afaf51e75e724ccbb158d57d7d"
+  },
+  {
+   "name": "blk.3.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "880c73a68a24fa98a5628552e8c3dd558ab21b58635ae24c48cfde7be11ae0cb"
+  },
+  {
+   "name": "blk.3.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "f08977ab1ace5bcb930937da4f44d68ee6b7416d8e6cb889d5c5986818fb3c16"
+  },
+  {
+   "name": "blk.4.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "967c080ede08952579636fe925b024b93bd808478eeecea558cea087ace7792c"
+  },
+  {
+   "name": "blk.4.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "4f849640958a68921c05101a152661ff0cfa55fc4db3ab73c189573aaed19e89"
+  },
+  {
+   "name": "blk.5.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "dab49e8b36d29fb1e4415d611ba79264dcfa8edc468ce642d3e613a9e7f077f1"
+  },
+  {
+   "name": "blk.5.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "2acf19f73f5a12ee7608018f615ce70051e3ba36ccd8d49dddc19dcabc0c1425"
+  },
+  {
+   "name": "blk.6.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "0c6b90fe5c130d66e44249c2a8e224a0932869d1174f177ffcf15abe615c0971"
+  },
+  {
+   "name": "blk.6.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "f4ed3abc5478def5364acf3c620fa1df17af3352bce911cd1e2d6c288bcc9101"
+  },
+  {
+   "name": "blk.7.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "7c00e53df09bb569ccd5b6b24474ffc5b45cbcfa2944ead1833b6065ecfe70c7"
+  },
+  {
+   "name": "blk.7.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "99133adeca1b136abcdb70a040f050135643af33564dbd75d9416cba69975700"
+  },
+  {
+   "name": "blk.8.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "89fb654d54b48e15775205a83a0376758be1f3d74dba4f430aae1c08323679c4"
+  },
+  {
+   "name": "blk.8.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "86c8e24cc18a8b8e8ee36d1f1746fbba2d866eed00a8febd6ae27a0c7944bec9"
+  },
+  {
+   "name": "blk.9.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "aae1df9912ca2d567b1da8fcb9ac4a28768b6b2d82c1fd83bc41be23f7a43557"
+  },
+  {
+   "name": "blk.9.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "25a455f965e31dbf4bef31308d3fa112109ba5afb532d8e685ed2f498cd9aca0"
+  },
+  {
+   "name": "blk.10.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "54d25f01e50dab4f9ee9443c7e4f72e70561d5ef3273a5ba8d9c0e27ba8eb824"
+  },
+  {
+   "name": "blk.10.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "13fe97fbf28bd8f180731998263d3dbb652762fe4ee08c61e00c4333e68dc1f0"
+  },
+  {
+   "name": "blk.11.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "3109af1ffb739f1232cf7cd129966f2b48050a4eaddca47525dd029e4ebabf79"
+  },
+  {
+   "name": "blk.11.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00001-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "73fa6859aaf64ccdb46481635c3801bd2d2a271bcffd0c66c8e3181b127da3cd"
+  },
+  {
+   "name": "blk.12.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "07420ccb970584be352fb60ca9464df0e6d60162fe9e18b47bade68ab4778dd9"
+  },
+  {
+   "name": "blk.12.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "50db07e633dd8ea6d33f64128c26ae7a59513e3d8398b91b67697f9189f0e171"
+  },
+  {
+   "name": "blk.13.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "3318fe2bb45892fb1d7666b56ee17b878ddf5cd5cf2cda1e33b0b3f8f489d9e3"
+  },
+  {
+   "name": "blk.13.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "396bedc87a395161d75c949b5f340dff7f4f629c20c705f7ae8c5b84da00abe0"
+  },
+  {
+   "name": "blk.14.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "deaa130f8595b72ddbb80a97b238eb49b9a08b812b325fbf88699e1a8837c2d2"
+  },
+  {
+   "name": "blk.14.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "c85dde82b78c9b9e1aae1da65ddcccd71e1c95144912fb22b86346f169736fe3"
+  },
+  {
+   "name": "blk.15.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "edc5f198f82a38b1637a4ffaf070e8c500283cf09d9776ab5610f195667a676d"
+  },
+  {
+   "name": "blk.15.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "03fc18e692a41666f3b0cd76b6c2509e28f500ea24bb5fc5b3707491bda1f052"
+  },
+  {
+   "name": "blk.16.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "c2fbf232fa97ea0cf23ed42c086bcccbb7a93c353ecc5c18fdcd041aa52b0717"
+  },
+  {
+   "name": "blk.16.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "2f88f43e8e35c8456ac51d9a7f8f640252b76974e455e152aebe819888393459"
+  },
+  {
+   "name": "blk.17.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "3cc2c69b95c4272493855fe5a72b67714c6d4e7e3319cb65efe6bf036a1a222c"
+  },
+  {
+   "name": "blk.17.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "3153f6a2c1029f9acdac6d2daaaecd20177c21ed92e09cd2617119ef5132cf0e"
+  },
+  {
+   "name": "blk.18.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "8205da910e2b49109516c6cfcbd33e541f7a44256cdb020b7751d3f5f2f81d7b"
+  },
+  {
+   "name": "blk.18.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "445552436483b9110e37f298ed86e3faa67f60bf54836e6db8957b1ad81d353f"
+  },
+  {
+   "name": "blk.19.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "3baee2f57cbc7258bed5aff9f45ac171f2ae40d17ea1fca01d8b9c004682fc46"
+  },
+  {
+   "name": "blk.19.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "c150301bdf2bba65501177d43a1479b77bed4fcc13e46cbe1785cab3731c8001"
+  },
+  {
+   "name": "blk.20.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "7866e7247ccd27084c273a906c502dd2ac5a6b449ea758798d636e45f9343e52"
+  },
+  {
+   "name": "blk.20.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "1a615ec226a76718ccf4f7e6b849470aa61f679ea744719ddeca02daa2a5b428"
+  },
+  {
+   "name": "blk.21.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "f627d357faffb16f7acfa000f2d4b2f9c03bf1395f7f48567d636a31b7cfe12d"
+  },
+  {
+   "name": "blk.21.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "faca04a1246edc1c0aedc13fab0455bea4ecae54f934e1739da984b4bf9f1c8e"
+  },
+  {
+   "name": "blk.22.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "29c953059493e5fbd3a6cfe5dccf915aa54156dce065426d63ae5ce4546c71da"
+  },
+  {
+   "name": "blk.22.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "6e77b7916c4a915a28da82a9235608315ca48662927845a4c6c8ca6d2730ea50"
+  },
+  {
+   "name": "blk.23.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "ca6bba0e86872e947fafc7511eff7fa965dfd5bf7899edc0255b7c2e542ec337"
+  },
+  {
+   "name": "blk.23.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "53d664b3b439842ebd72bf01ab0f0dfa59ce34ac22e931a5299a9f2f3e22eb7b"
+  },
+  {
+   "name": "blk.24.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "11d6f121b5440343ee5fc3566628305006486971699290d213507fcc88a35eb8"
+  },
+  {
+   "name": "blk.24.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "034a42b34cdd2edf2e12c95f483ecb45401755285591da4488b7621403cb2834"
+  },
+  {
+   "name": "blk.25.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "bb6c2fa232774323ace584c9808e8d785f33b2fc5ae85410cdb67a89f3619428"
+  },
+  {
+   "name": "blk.25.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "c73b8e940049876d5d446917a930698cfa787e9be039bc43b6b38ea3d2e7c4f4"
+  },
+  {
+   "name": "blk.26.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "f7446624811b28156c1f4ddbd8c9588955e3817c96fc278c3eced096e54e69c4"
+  },
+  {
+   "name": "blk.26.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "595651b2916fbde5b0e927e98403f1e0da4602554c3c93730af182549a502fe3"
+  },
+  {
+   "name": "blk.27.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "eabc0ea858ee7d48a8705a93ddeb6881a252c73a7f7a0c4178c8cb8337926def"
+  },
+  {
+   "name": "blk.27.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "c7bd95715823d4c0d670bca93b4c3ad8542ed2b9b280cca795b0d36ad931d37f"
+  },
+  {
+   "name": "blk.28.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "2ccde72d6959b9bbca76f7e0dbb7ef201be0fb63356148ad8d1a4253a06a303f"
+  },
+  {
+   "name": "blk.28.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "d7f71a69170b943d44fed8f9388d31c52be289412fda2e848602723462b9fb6a"
+  },
+  {
+   "name": "blk.29.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "9c8bb9e21b311d4c3bb4ca3e9083eca659237e6823cc53fcf40332b888dacad4"
+  },
+  {
+   "name": "blk.29.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "fc7d31ecca7c51d316ad25271479823e43af04bb0b22c3757b2434163bfe67c3"
+  },
+  {
+   "name": "blk.30.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "19170ad4bb2d0ba78cfa3c3664eacab25f8aa3288d8d1c36a4014bf4a7c3b0cf"
+  },
+  {
+   "name": "blk.30.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "e41521a323cd859da59b53623e6e6590ac119135194dbfee9f9dfabc15940ee8"
+  },
+  {
+   "name": "blk.31.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "6f2c6ef01102b0d1b454303d764763fff9d7a4059e715270b50665e65bae8693"
+  },
+  {
+   "name": "blk.31.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "be41b9a987c46e050e246ce782639afcf628453cb5164e33fa704a2b167fb78b"
+  },
+  {
+   "name": "blk.32.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "315f83c46ab2d985c284a16096af9685c878a3a8883eb52f2291fff02105181b"
+  },
+  {
+   "name": "blk.32.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "ed9fa0395b55580fb5ed22f818d7216367fba4132419678982c2b3e345a5406b"
+  },
+  {
+   "name": "blk.33.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "870b9a3d349215b4ec842a2e75a34068b239efa4614d5a67fcf34946f14f2a0f"
+  },
+  {
+   "name": "blk.33.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "1440558fcf786f61d41eac9ee6d30ac5d5248199f1ec74b215c8bdb5591f29b8"
+  },
+  {
+   "name": "blk.34.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "9b8980e4cf70a10c249b9b1c17c28ce7415e0bb1343fc8a2fdcfc909df04219b"
+  },
+  {
+   "name": "blk.34.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "be8e0eeb5eaf803042f7ee8806bffcf64f184ed4b2cbc3e924ffbf7cc00e75ff"
+  },
+  {
+   "name": "blk.35.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "f0501f22b8a80105d48d423715b60ef1af8f9d60e3f7f58765c7725364b02ec4"
+  },
+  {
+   "name": "blk.35.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "d46bb890c81b2ade98fbbd98e5d36269a62e7f124d597cf6e205f08046f95fb3"
+  },
+  {
+   "name": "blk.36.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "8d09fd32489aeabe98674fa0531da75b223d8caaf9d5da56658cf133119726ae"
+  },
+  {
+   "name": "blk.36.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "fb1b6c0d7a2b21d6b64f824ee254be6896a19c22b26c540281415ae71edc721e"
+  },
+  {
+   "name": "blk.37.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "f389d67631ee333924b449b88b0637adfd20b513c84e25e7a25ff823eec4f861"
+  },
+  {
+   "name": "blk.37.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "4c71d2a74ee2ec9664e0b89a96d75c68f58c7262b965441302abaf0dc0892ccc"
+  },
+  {
+   "name": "blk.38.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "73fae9404d3306a32fb2ec9918547de872000f305965ea3e623873170fe53480"
+  },
+  {
+   "name": "blk.38.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "e2b970b875d6b35c9a9c2c0cea586cd176c52c1e4e7c88089ad0170293344d04"
+  },
+  {
+   "name": "blk.39.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "389bd10f8b685d8673478fe95648d62391498aedd68e197d71e454087fa82e64"
+  },
+  {
+   "name": "blk.39.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "674a0579a8fd5793db47f07645cf64a695baeb034f6bb5989c6cd44d8d78e7ce"
+  },
+  {
+   "name": "blk.40.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "8a253cdb2bcd4b9ba26bc92397857b925a532949dcf276b5f726b684e41a5e26"
+  },
+  {
+   "name": "blk.40.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "86af0864bf82acc282b50bd1099767f3e54c32378b42f006e5741369818c4955"
+  },
+  {
+   "name": "blk.41.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "28a66e4c454dcd68c319779f85bc4f7cf9f100134d5b2616cb85a33d9438c7b4"
+  },
+  {
+   "name": "blk.41.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "b673baa1fd30224e410275ae4fef9a7f208555757e81bf3e8256009604eb5d7c"
+  },
+  {
+   "name": "blk.42.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "9863d053c3550b1c2d67958654e28e5d84defb0ed9b5108b923323416f30e8c5"
+  },
+  {
+   "name": "blk.42.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "267ca40021d88232ea196de48e2194bf4ea7999c39c99139a9488a8d13437379"
+  },
+  {
+   "name": "blk.43.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "52333fbc1174f2deeb2ed764c264c16aeb2961f72346cdaedfe4a252ed7f42a0"
+  },
+  {
+   "name": "blk.43.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "ef51b4785be4051e196b6809963a8808f004037fd13aec66d26a47bc1777aafe"
+  },
+  {
+   "name": "blk.44.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "05e6e0281f4e82523ae1c9303d196651ef9685c449681c8264faca6ac3dbab27"
+  },
+  {
+   "name": "blk.44.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "65fd59ba4f3ba03200f7b6c01ba877442e1a417bf9b1fcfa72cd8f18ba4ac46e"
+  },
+  {
+   "name": "blk.45.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "716e86907b98006efcd8f5fe429a1a534486a2805233f0ed0898a2fe21443e12"
+  },
+  {
+   "name": "blk.45.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "e97868f76058d3d1896c0191cf5789ab16b0fad7ff4252ad00872444d9933e7a"
+  },
+  {
+   "name": "blk.46.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "6647c66ac7ade9cd0b2997660c35a70c1f7de9ff94060e5686ca9c4decb2064e"
+  },
+  {
+   "name": "blk.46.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "aa649ff658521daa1478f1141bb2f57f9cb0f2b4d0f099dc2c61aa834ee161c3"
+  },
+  {
+   "name": "blk.47.ffn_gate_inp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "418104d20e8c36a0ad9f0ac27f922b663e3bedc4c998fe4471547734e8e0d454"
+  },
+  {
+   "name": "blk.47.ffn_gate_inp_shexp.weight",
+   "shard": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_XXS-00002-of-00002.gguf",
+   "src_type": "F32",
+   "dst_type": "BF16",
+   "method": "f32->bf16: the values are BF16's (low 16 bits zero)",
+   "exact": true,
+   "max_abs_err": 0.0,
+   "source_sha256": "59159ff58823cccd76fc9a148d9e6248e163dac5be09d38f64be4d2b832602eb"
+  }
+ ]
+}

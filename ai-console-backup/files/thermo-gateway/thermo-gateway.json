@@ -1,0 +1,29 @@
+{
+  "bind_ip": "10.35.219.64",
+  "port": 18787,
+  "allowed_networks": [
+    "10.35.219.0/24"
+  ],
+  "gateway_name": "office",
+  "discover": true,
+  "gatt_poll_seconds": 300,
+  "sensors": [
+    {
+      "mac": "<REDACTED>",
+      "name": "ATC_2987BB",
+      "bindkey": "<REDACTED>"
+    }
+  ],
+  "notify": {
+    "from_file": "C:\\Users\\pjunm\\dev\\miner-status-ios\\pc-service\\aggregator.json"
+  },
+  "alerts": {
+    "temperature_high": 32,
+    "temperature_low": 10,
+    "humidity_high": 80,
+    "humidity_low": 25,
+    "battery_low": 15,
+    "offline_after_seconds": 7200,
+    "hold_seconds": 600
+  }
+}

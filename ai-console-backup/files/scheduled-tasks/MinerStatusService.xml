@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Keeps the miner status service (office_aggregator.py) running</Description>
+    <URI>\MinerStatusService</URI>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>&lt;YOUR-USER-SID&gt;</UserId>
+      <LogonType>InteractiveToken</LogonType>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <IdleSettings>
+      <Duration>PT10M</Duration>
+      <WaitTimeout>PT1H</WaitTimeout>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+  </Settings>
+  <Triggers>
+    <LogonTrigger>
+      <Delay>PT1M</Delay>
+      <UserId>OFFICE_OPEN\pjunm</UserId>
+    </LogonTrigger>
+    <TimeTrigger>
+      <StartBoundary>2026-11-11T00:00:00+08:00</StartBoundary>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>true</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Users\pjunm\AppData\Local\Programs\Python\Python311\pythonw.exe</Command>
+      <Arguments>-I "C:\Users\pjunm\dev\miner-status-ios\pc-service\keep_status_service.py"</Arguments>
+      <WorkingDirectory>C:\Users\pjunm\dev\miner-status-ios\pc-service</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

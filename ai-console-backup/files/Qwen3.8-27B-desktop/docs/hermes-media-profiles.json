@@ -1,0 +1,10 @@
+{
+  "Image": {
+    "toolsets": ["bfl", "browser", "clarify", "code_execution", "computer_use", "cronjob", "delegation", "file", "image_gen", "memory", "session_search", "skills", "terminal", "todo", "tts", "vision", "web"],
+    "compression": {"provider": "vertex", "model": "google/gemini-2.5-flash", "base_url": ""}
+  },
+  "Video": {
+    "toolsets": ["file", "terminal", "skills"],
+    "compression": {"provider": "lmstudio", "model": "qwen38_mtp", "base_url": "http://127.0.0.1:1234/v1"}
+  }
+}

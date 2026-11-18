@@ -1,0 +1,746 @@
+"""Bluetooth thermometer gateway: hears BLE thermometers next to this PC and serves their latest
+readings as JSON on a private (ZeroTier) address, for the toolbox app's thermometer tab.
+
+Readings come from advertisements, so any number of thermometers can be read at once without
+connecting to them:
+  * BTHome v2 (service data 0xFCD2), the default of the pvvx custom firmware; an encrypted one
+    (pvvx "encrypted beacon") is read when its sensor entry in the config has "bindkey" (32 hex
+    digits, the key set on the thermometer), so other people's gateways see no readings;
+  * pvvx custom format and atc1441 format (service data 0x181A).
+A thermometer still on Xiaomi's stock firmware (encrypted advertisements) can be listed in the
+config with "gatt": true; it is then connected to every gatt_poll_seconds and read directly
+(LYWSD03MMC stock firmware only).
+
+Every 5 minutes each thermometer heard in those 5 minutes is sampled into a local SQLite file
+(thermo-history.sqlite, kept history_days, default 90) for the app's history charts. Readings
+out of range, low batteries and silent thermometers are pushed to the phone through ntfy, as
+the miner status service does (see Notifier).
+
+HTTP: GET /sensors, GET /history?id=<address>&range=day|week|month, GET /health, and one write,
+POST /labels (a thermometer's name and room from the phone), answered only to clients inside
+allowed_networks; the server binds one specific address, never 0.0.0.0.
+
+    python thermo_gateway.py [--config thermo-gateway.json]
+    python thermo_gateway.py --fake fixtures/fake-sensors.json --bind 127.0.0.1 --port 8795
+
+The fake mode serves fixture readings without Bluetooth (used by the simulator UI tests).
+"""
+
+import argparse
+import ipaddress
+import json
+import logging
+import math
+import sqlite3
+import struct
+import threading
+import time
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from urllib.parse import parse_qs
+
+ROOT = Path(__file__).resolve().parent
+API_VERSION = 1
+MAX_LABEL = 40
+UUID_BTHOME = "0000fcd2-0000-1000-8000-00805f9b34fb"
+UUID_ENV = "0000181a-0000-1000-8000-00805f9b34fb"
+CHAR_MI_TEMP = "ebe0ccc1-7a0a-4b0c-8a1a-6ff2997da3a6"
+
+# BTHome v2 object id -> payload length in bytes. Parsing stops at an id not listed here, since
+# its length is unknown; the thermometer objects come first in pvvx's packets.
+BTHOME_SIZES = {
+    0x00: 1, 0x01: 1, 0x02: 2, 0x03: 2, 0x04: 3, 0x05: 3, 0x06: 2, 0x07: 2, 0x08: 2, 0x09: 1,
+    0x0A: 3, 0x0B: 3, 0x0C: 2, 0x0D: 2, 0x0E: 2, 0x0F: 1, 0x10: 1, 0x11: 1, 0x12: 2, 0x13: 2,
+    0x14: 2, 0x15: 1, 0x16: 1, 0x17: 1, 0x18: 1, 0x19: 1, 0x1A: 1, 0x1B: 1, 0x1C: 1, 0x1D: 1,
+    0x1E: 1, 0x1F: 1, 0x20: 1, 0x21: 1, 0x22: 1, 0x23: 1, 0x24: 1, 0x25: 1, 0x26: 1, 0x27: 1,
+    0x28: 1, 0x29: 1, 0x2A: 1, 0x2B: 1, 0x2C: 1, 0x2D: 1, 0x2E: 1, 0x2F: 1, 0x3A: 1, 0x3C: 2,
+    0x3D: 2, 0x3E: 4, 0x3F: 2, 0x40: 2, 0x41: 2, 0x42: 3, 0x43: 2, 0x44: 2, 0x45: 2, 0x46: 1,
+    0x47: 2, 0x48: 2, 0x49: 2, 0x4A: 2, 0x4B: 3, 0x4C: 4, 0x4D: 4, 0x4E: 4, 0x4F: 4, 0x50: 4,
+    0x51: 2, 0x52: 2, 0x5A: 1, 0x5B: 1, 0x5C: 1, 0x5D: 1, 0x5E: 1, 0x60: 1,
+}
+
+
+def battery_from_voltage(mv):
+    """Battery percent from a CR2032's voltage, as the pvvx firmware estimates it."""
+    if mv is None:
+        return None
+    return max(0, min(100, round((mv - 2200) / 9)))
+
+
+def parse_bindkey(text):
+    """A 32-hex-digit bindkey from the config -> 16 bytes; None when absent."""
+    if not text:
+        return None
+    key = bytes.fromhex(text.strip())
+    if len(key) != 16:
+        raise ValueError("bindkey must be 32 hex digits")
+    return key
+
+
+def bthome_nonce(mac, info, counter):
+    """BTHome v2 AES-CCM nonce: MAC (as written) + UUID 0xFCD2 little-endian + info + counter."""
+    return bytes.fromhex(normalize_mac(mac).replace(":", "")) + b"\xd2\xfc" + bytes([info]) + counter
+
+
+def decrypt_bthome(data: bytes, key: bytes, mac: str):
+    """Encrypted BTHome v2 service data -> the plain objects, or None when it does not verify.
+    Layout: info byte, ciphertext, 4-byte counter, 4-byte MIC (AES-CCM, 4-byte tag)."""
+    if len(data) < 1 + 1 + 4 + 4:
+        return None
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+    info, body, counter, mic = data[0], data[1:-8], data[-8:-4], data[-4:]
+    try:
+        return AESCCM(key, tag_length=4).decrypt(bthome_nonce(mac, info, counter), body + mic, None)
+    except InvalidTag:
+        return None
+
+
+def decode_bthome(data: bytes, key: bytes = None, mac: str = None):
+    """BTHome v2 service data (without the UUID). An encrypted packet is decoded only with its
+    thermometer's bindkey; None if it cannot be decrypted, is not v2 or is malformed."""
+    if len(data) < 2:
+        return None
+    info = data[0]
+    if (info >> 5) != 2:  # not version 2
+        return None
+    out = {"format": "bthome"}
+    if info & 0x01:  # encrypted
+        plain = decrypt_bthome(data, key, mac) if key and mac else None
+        if plain is None:
+            return None
+        data = bytes([info & 0xFE]) + plain
+        out["format"] = "bthome-encrypted"
+    i = 1
+    while i < len(data):
+        oid = data[i]
+        size = BTHOME_SIZES.get(oid)
+        if size is None or i + 1 + size > len(data):
+            break
+        raw = data[i + 1:i + 1 + size]
+        if oid == 0x01:
+            out["battery"] = raw[0]
+        elif oid == 0x02:
+            out["temperature"] = struct.unpack("<h", raw)[0] / 100
+        elif oid == 0x45:
+            out["temperature"] = struct.unpack("<h", raw)[0] / 10
+        elif oid == 0x03:
+            out["humidity"] = struct.unpack("<H", raw)[0] / 100
+        elif oid == 0x2E:
+            out["humidity"] = float(raw[0])
+        elif oid == 0x0C:
+            out["voltage"] = struct.unpack("<H", raw)[0] / 1000
+        i += 1 + size
+    return out if len(out) > 1 else None
+
+
+def decode_env(data: bytes):
+    """Service data 0x181A: pvvx custom (15 bytes) or atc1441 (13 bytes); other lengths are
+    the encrypted variants and are skipped."""
+    if len(data) == 15:
+        temp, hum, mv, batt = struct.unpack("<hHHB", data[6:13])
+        return {"format": "pvvx", "temperature": temp / 100, "humidity": hum / 100,
+                "voltage": mv / 1000, "battery": batt}
+    if len(data) == 13:
+        temp, hum, batt, mv = struct.unpack(">hBBH", data[6:12])
+        return {"format": "atc1441", "temperature": temp / 10, "humidity": float(hum),
+                "voltage": mv / 1000, "battery": batt}
+    return None
+
+
+def decode_service_data(service_data, key=None, mac=None):
+    """{uuid: bytes} from one advertisement -> reading dict or None. key: that thermometer's
+    bindkey (16 bytes) for encrypted BTHome packets."""
+    for uuid, data in service_data.items():
+        uuid = uuid.lower()
+        if uuid == UUID_BTHOME:
+            reading = decode_bthome(bytes(data), key, mac)
+        elif uuid == UUID_ENV:
+            reading = decode_env(bytes(data))
+        else:
+            continue
+        if reading:
+            return reading
+    return None
+
+
+def normalize_mac(mac):
+    return mac.strip().upper().replace("-", ":")
+
+
+class Store:
+    """Latest reading per thermometer. BTHome packets alternate their contents (pvvx sends
+    temperature/humidity/battery in one and voltage in another), so values merge."""
+
+    FIELDS = ("temperature", "humidity", "battery", "voltage")
+
+    def __init__(self, sensors=(), discover=True, state_path=None, clock=time.time):
+        self.lock = threading.Lock()
+        self.clock = clock
+        self.discover = discover
+        self.state_path = state_path
+        self.configured = {normalize_mac(s["mac"]): s for s in sensors}
+        self.items = {}
+        for mac, cfg in self.configured.items():
+            self.items[mac] = {"id": mac, "name": cfg.get("name") or mac, "advertised_name": None}
+        if state_path and Path(state_path).exists():
+            try:
+                saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
+                for item in saved.get("sensors", []):
+                    mac = normalize_mac(item["id"])
+                    if mac in self.items or discover:
+                        merged = {**item, "id": mac}
+                        if mac in self.configured:  # the config's name wins over the saved one
+                            merged["name"] = self.items[mac]["name"]
+                        self.items[mac] = merged
+            except (ValueError, KeyError, OSError):
+                logging.exception("Ignoring an unreadable state file")
+
+    def accepts(self, mac):
+        return self.discover or normalize_mac(mac) in self.configured
+
+    def update(self, mac, reading, rssi=None, advertised_name=None):
+        mac = normalize_mac(mac)
+        if not self.accepts(mac):
+            return False
+        with self.lock:
+            item = self.items.setdefault(mac, {"id": mac, "name": advertised_name or mac, "advertised_name": None})
+            for key in self.FIELDS:
+                if reading.get(key) is not None:
+                    item[key] = reading[key]
+            if reading.get("battery") is None and item.get("battery") is None and reading.get("voltage"):
+                item["battery"] = battery_from_voltage(reading["voltage"] * 1000)
+            item["format"] = reading.get("format")
+            item["updated"] = round(self.clock())
+            item["error"] = None
+            if rssi is not None:
+                item["rssi"] = rssi
+            if advertised_name:
+                item["advertised_name"] = advertised_name
+                if item["name"] == mac and mac not in self.configured:
+                    item["name"] = advertised_name
+        return True
+
+    def set_label(self, mac, name, room):
+        """The name and room given on the phone (POST /labels), shown on every phone and used in
+        notifications. None or empty clears them; the gateway's own name comes back."""
+        mac = normalize_mac(mac)
+        with self.lock:
+            item = self.items.get(mac)
+            if item is None:
+                return False
+            item["label"] = (name or "").strip()[:MAX_LABEL] or None
+            item["room"] = (room or "").strip()[:MAX_LABEL] or None
+        return True
+
+    def set_error(self, mac, message):
+        with self.lock:
+            item = self.items.get(normalize_mac(mac))
+            if item is not None:
+                item["error"] = message
+
+    def age(self, mac):
+        item = self.items.get(normalize_mac(mac)) or {}
+        return self.clock() - item["updated"] if item.get("updated") else None
+
+    def snapshot(self, gateway_name):
+        with self.lock:
+            sensors = []
+            for item in self.items.values():
+                if item.get("updated") is None and item["id"] not in self.configured:
+                    continue
+                sensors.append({
+                    "id": item["id"], "name": item.get("label") or item.get("name") or item["id"],
+                    "label": item.get("label"), "room": item.get("room"), "advertised_name": item.get("advertised_name"),
+                    "temperature": item.get("temperature"), "humidity": item.get("humidity"),
+                    "battery": item.get("battery"), "voltage": item.get("voltage"),
+                    "rssi": item.get("rssi"), "updated": item.get("updated"),
+                    "format": item.get("format"), "error": item.get("error"),
+                })
+        sensors.sort(key=lambda s: (s["name"].lower(), s["id"]))
+        return {"version": API_VERSION, "gateway": gateway_name, "time": round(self.clock()), "sensors": sensors}
+
+    def save(self):
+        """The thermometers as kept here (own name and phone label apart), for the next start."""
+        if not self.state_path:
+            return
+        with self.lock:
+            items = [dict(item) for item in self.items.values()]
+        data = json.dumps({"sensors": items}, ensure_ascii=False, indent=1)
+        tmp = Path(str(self.state_path) + ".tmp")
+        tmp.write_text(data, encoding="utf-8")
+        tmp.replace(self.state_path)
+
+
+SAMPLE_SECONDS = 300
+# range -> (days, bucket in seconds): the day as 30-minute points, as in Mi Home's day view;
+# the week and month as one point per local calendar day with its lowest and highest.
+RANGES = {"day": (1, 1800), "week": (7, 86400), "month": (30, 86400)}
+
+
+def _round2(value):
+    return None if value is None else round(value, 2)
+
+
+class History:
+    """5-minute samples per thermometer in SQLite, averaged into buckets when queried."""
+
+    def __init__(self, path=":memory:", keep_days=90, clock=time.time, utc_offset=None):
+        self.clock = clock
+        self.keep_days = keep_days
+        self.offset = utc_offset  # None: this PC's local time zone (days start at local midnight)
+        self.lock = threading.Lock()
+        self.db = sqlite3.connect(str(path), check_same_thread=False)
+        self.db.execute("CREATE TABLE IF NOT EXISTS samples (mac TEXT NOT NULL, t INTEGER NOT NULL, "
+                        "temperature REAL, humidity REAL, battery INTEGER, PRIMARY KEY (mac, t))")
+        self.db.commit()
+
+    def record(self, store, interval=SAMPLE_SECONDS):
+        """One sample (at the start of the current interval) for each thermometer heard within
+        the last interval. Returns the number of samples written."""
+        now = round(self.clock())
+        t = now - now % interval
+        rows = [(s["id"], t, s["temperature"], s["humidity"], s["battery"])
+                for s in store.snapshot("")["sensors"]
+                if s["updated"] is not None and now - s["updated"] <= interval
+                and (s["temperature"] is not None or s["humidity"] is not None)]
+        self.add(rows)
+        return len(rows)
+
+    def add(self, rows):
+        with self.lock:
+            self.db.executemany("INSERT OR REPLACE INTO samples VALUES (?, ?, ?, ?, ?)", rows)
+            self.db.execute("DELETE FROM samples WHERE t < ?", (round(self.clock()) - self.keep_days * 86400,))
+            self.db.commit()
+
+    def utc_offset(self):
+        if self.offset is not None:
+            return self.offset
+        return time.localtime(self.clock()).tm_gmtoff
+
+    def query(self, mac, range_name):
+        """day: the last 24 hours in 30-minute points; week and month: one point per local
+        calendar day (the last 7 or 30, today included), each with the day's lowest and highest."""
+        days, bucket = RANGES[range_name]
+        now = round(self.clock())
+        off = self.utc_offset()
+        if range_name == "day":
+            start = now - 86400
+        else:
+            start = (now + off) // 86400 * 86400 - off - (days - 1) * 86400
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT ((t + ?) / ?) * ? - ? AS b, AVG(temperature), AVG(humidity), MIN(battery), "
+                "MIN(temperature), MAX(temperature), MIN(humidity), MAX(humidity) FROM samples "
+                "WHERE mac = ? AND t >= ? GROUP BY b ORDER BY b",
+                (off, bucket, bucket, off, normalize_mac(mac), start)).fetchall()
+        points = [{"t": b, "temperature": _round2(temp), "humidity": _round2(hum), "battery": batt,
+                   "temperature_min": _round2(tmin), "temperature_max": _round2(tmax),
+                   "humidity_min": _round2(hmin), "humidity_max": _round2(hmax)}
+                  for b, temp, hum, batt, tmin, tmax, hmin, hmax in rows]
+        return {"version": API_VERSION, "id": normalize_mac(mac), "range": range_name, "bucket": bucket,
+                "time": now, "utc_offset": off, "points": points}
+
+    def seed_demo(self, store, days=30):
+        """Made-up daily curves for the fake mode, ending at each thermometer's reading."""
+        now = round(self.clock())
+        rows = []
+        for item in store.snapshot("")["sensors"]:
+            if item["temperature"] is None:
+                continue
+            phase = int(item["id"][-2:], 16)
+            end = item["updated"] or now
+            for k in range(days * 86400 // SAMPLE_SECONDS):
+                t = end - end % SAMPLE_SECONDS - k * SAMPLE_SECONDS
+                day = math.sin(2 * math.pi * (t % 86400) / 86400 + phase)
+                drift = math.sin(2 * math.pi * t / (5 * 86400))
+                rows.append((item["id"], t, round(item["temperature"] + 1.8 * day - 1.8 * math.sin(phase) + 0.6 * drift, 2),
+                             round(max(5.0, min(99.0, (item["humidity"] or 50) - 6 * day + 6 * math.sin(phase))), 2),
+                             min(100, (item["battery"] or 50) + k * SAMPLE_SECONDS // (10 * 86400))))
+        self.add(rows)
+
+
+class Notifier:
+    """Phone notifications through ntfy, as the miner status service sends them: a thermometer
+    out of range (temperature or humidity too high or too low), a low battery, or one not heard
+    for a long time. Each holds `hold_seconds` before it is sent, is sent once, and is armed
+    again only after the value comes back past a small margin; recoveries are not sent.
+    Messages carry the thermometer's name, room and value only, never addresses.
+
+    Config: "notify": {"server", "topic"} or {"from_file": <another service's JSON whose
+    "notify" section has them>}; "alerts": thresholds (null turns one off) and "sensors":
+    {address: {overrides}}."""
+
+    DEFAULTS = {"temperature_high": 32.0, "temperature_low": 10.0, "humidity_high": 80.0, "humidity_low": 25.0,
+                "battery_low": 15, "offline_after_seconds": 7200, "hold_seconds": 600}
+    MARGIN = {"temperature_high": 0.5, "temperature_low": 0.5, "humidity_high": 2.0, "humidity_low": 2.0,
+              "battery_low": 5}
+
+    def __init__(self, cfg, store, send=None, clock=time.time):
+        alerts = dict(cfg.get("alerts") or {})
+        self.overrides = {normalize_mac(k): v for k, v in (alerts.pop("sensors", None) or {}).items()}
+        self.rules = {**self.DEFAULTS, **alerts}
+        self.store = store
+        self.clock = clock
+        self.server, self.topic = self.destination(cfg.get("notify") or {})
+        self.send = send or self.post
+        self.since = {}
+        self.sent = set()
+
+    @staticmethod
+    def destination(notify):
+        if notify.get("from_file"):
+            other = json.loads(Path(notify["from_file"]).read_text(encoding="utf-8-sig")).get("notify") or {}
+            notify = {**other, **{k: v for k, v in notify.items() if k != "from_file"}}
+        return notify.get("server") or "https://ntfy.sh", notify.get("topic")
+
+    @property
+    def enabled(self):
+        return bool(self.topic)
+
+    def rules_for(self, mac):
+        return {**self.rules, **self.overrides.get(normalize_mac(mac), {})}
+
+    def summary(self):
+        """What the app shows: the rules and whether notifications are on."""
+        keys = ("temperature_high", "temperature_low", "humidity_high", "humidity_low", "battery_low",
+                "offline_after_seconds")
+        return {"enabled": self.enabled, **{k: self.rules[k] for k in keys}}
+
+    def post(self, title, message, priority, tags):
+        body = json.dumps({"topic": self.topic, "title": title, "message": message,
+                           "priority": priority, "tags": tags}, ensure_ascii=False).encode("utf-8")
+        request = urllib.request.Request(self.server, data=body, method="POST",
+                                         headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            response.read(4096)
+
+    def conditions(self, item, now):
+        """{kind: (heading, message)} for what is out of range right now (with the margin for
+        kinds already sent)."""
+        rules = self.rules_for(item["id"])
+        out = {}
+
+        def past(kind, value, limit, above):
+            if value is None or limit is None:
+                return False
+            if (item["id"], kind) in self.sent:
+                limit = limit - self.MARGIN[kind] if above else limit + self.MARGIN[kind]
+            return value > limit if above else value < limit
+
+        temp, hum, batt = item.get("temperature"), item.get("humidity"), item.get("battery")
+        fresh = item.get("updated") is not None and now - item["updated"] <= 1800
+        if fresh and past("temperature_high", temp, rules["temperature_high"], True):
+            out["temperature_high"] = ("溫度過高", f"{temp:.1f}°C（上限 {rules['temperature_high']:g}°C）")
+        if fresh and past("temperature_low", temp, rules["temperature_low"], False):
+            out["temperature_low"] = ("溫度過低", f"{temp:.1f}°C（下限 {rules['temperature_low']:g}°C）")
+        if fresh and past("humidity_high", hum, rules["humidity_high"], True):
+            out["humidity_high"] = ("濕度過高", f"{hum:.0f}%（上限 {rules['humidity_high']:g}%）")
+        if fresh and past("humidity_low", hum, rules["humidity_low"], False):
+            out["humidity_low"] = ("濕度過低", f"{hum:.0f}%（下限 {rules['humidity_low']:g}%）")
+        if past("battery_low", batt, rules["battery_low"], False):
+            out["battery_low"] = ("電量不足", f"剩 {batt}%，請更換 CR2032 電池")
+        limit = rules["offline_after_seconds"]
+        if limit is not None and item.get("updated") is not None and now - item["updated"] >= limit:
+            hours = (now - item["updated"]) / 3600
+            out["offline"] = ("收不到訊號", f"已 {hours:.1f} 小時沒有收到讀數，可能沒電或離閘道太遠")
+        return out
+
+    def check(self, now=None):
+        """Sends what has held long enough; returns the number sent."""
+        if not self.enabled:
+            return 0
+        now = round(now if now is not None else self.clock())
+        hold = self.rules["hold_seconds"] or 0
+        count = 0
+        for item in self.store.snapshot("")["sensors"]:
+            found = self.conditions(item, now)
+            for kind in ("temperature_high", "temperature_low", "humidity_high", "humidity_low", "battery_low", "offline"):
+                key = (item["id"], kind)
+                if kind not in found:
+                    self.since.pop(key, None)
+                    self.sent.discard(key)
+                    continue
+                start = self.since.setdefault(key, now)
+                waits = 0 if kind in ("offline", "battery_low") else hold
+                if key in self.sent or now - start < waits:
+                    continue
+                heading, message = found[kind]
+                label = f"{item['room']}・{item['name']}" if item.get("room") else item["name"]
+                try:
+                    self.send(f"🌡️ {label} {heading}", message, 4 if kind != "battery_low" else 3, ["thermometer"])
+                    self.sent.add(key)
+                    count += 1
+                except OSError as exc:
+                    logging.warning("Notification failed: %s", exc)
+        return count
+
+    def run(self, interval=60):
+        while True:
+            time.sleep(interval)
+            try:
+                self.check()
+            except Exception:
+                logging.exception("Notification check failed")
+
+
+class BleWorker:
+    """Scans continuously; pauses the scan to connect to stock-firmware thermometers."""
+
+    def __init__(self, cfg, store):
+        self.cfg = cfg
+        self.store = store
+        self.gatt = [normalize_mac(s["mac"]) for s in cfg.get("sensors", []) if s.get("gatt")]
+        self.keys = {normalize_mac(s["mac"]): parse_bindkey(s["bindkey"])
+                     for s in cfg.get("sensors", []) if s.get("bindkey")}
+        self.poll_seconds = int(cfg.get("gatt_poll_seconds", 300))
+        self.last_advert = time.time()
+        self.next_poll = {}
+
+    def on_advert(self, device, adv):
+        self.last_advert = time.time()
+        mac = normalize_mac(device.address)
+        reading = decode_service_data(adv.service_data, self.keys.get(mac), mac)
+        if reading:
+            self.store.update(device.address, reading, adv.rssi, adv.local_name)
+
+    async def read_gatt(self, mac):
+        import asyncio
+        from bleak import BleakClient, BleakScanner
+        dev = await BleakScanner.find_device_by_address(mac, timeout=20)
+        if dev is None:
+            raise RuntimeError("找不到裝置")
+        got = asyncio.get_running_loop().create_future()
+
+        def cb(_, data):
+            if not got.done():
+                got.set_result(bytes(data))
+
+        async with BleakClient(dev, timeout=20) as client:
+            await client.start_notify(CHAR_MI_TEMP, cb)
+            data = await asyncio.wait_for(got, 20)
+        temp, hum, mv = struct.unpack("<hBH", data[:5])
+        return {"format": "gatt", "temperature": temp / 100, "humidity": float(hum),
+                "voltage": mv / 1000, "battery": battery_from_voltage(mv)}
+
+    async def run(self):
+        import asyncio
+        from bleak import BleakScanner
+        while True:
+            scanner = BleakScanner(self.on_advert, scanning_mode="active")
+            try:
+                await scanner.start()
+                self.last_advert = time.time()
+                while True:
+                    await asyncio.sleep(5)
+                    if time.time() - self.last_advert > 300:
+                        logging.warning("No advertisement for 5 minutes; restarting the scan")
+                        break
+                    due = [m for m in self.gatt if time.time() >= self.next_poll.get(m, 0)
+                           and (self.store.age(m) is None or self.store.age(m) > self.poll_seconds)]
+                    if due:
+                        break
+            except Exception:
+                logging.exception("Scan failed")
+                await asyncio.sleep(10)
+            finally:
+                try:
+                    await scanner.stop()
+                except Exception:
+                    pass
+            for mac in [m for m in self.gatt if time.time() >= self.next_poll.get(m, 0)]:
+                age = self.store.age(mac)
+                if age is not None and age <= self.poll_seconds:
+                    continue
+                self.next_poll[mac] = time.time() + self.poll_seconds
+                try:
+                    self.store.update(mac, await self.read_gatt(mac))
+                except Exception as exc:
+                    logging.warning("GATT read of %s failed: %s", mac, exc)
+                    self.store.set_error(mac, "連線讀取失敗")
+
+
+def load_fake(path, clock=time.time):
+    """Fixture readings; each sensor's age_seconds becomes its update time."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    store = Store(data.get("sensors", []), discover=True, clock=clock)
+    for item in data.get("sensors", []):
+        if "age_seconds" in item:
+            reading = {k: item.get(k) for k in Store.FIELDS}
+            reading["format"] = item.get("format", "bthome")
+            store.update(item["mac"], reading, item.get("rssi"), item.get("advertised_name"))
+            store.items[normalize_mac(item["mac"])]["updated"] = round(clock() - item["age_seconds"])
+        if item.get("error"):
+            store.set_error(item["mac"], item["error"])
+    return store, data.get("gateway_name", "示範閘道")
+
+
+def handler_for(store, gateway_name, networks, history=None, notifier=None):
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "ThermoGateway/1"
+
+        def log_message(self, fmt, *args):
+            logging.debug("%s " + fmt, self.client_address[0], *args)
+
+        def send_json(self, code, obj):
+            body = json.dumps(obj, ensure_ascii=False, allow_nan=False).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def allowed(self):
+            try:
+                peer = ipaddress.ip_address(self.client_address[0])
+            except ValueError:
+                return False
+            return any(peer in network for network in networks)
+
+        def do_GET(self):
+            if not self.allowed():
+                return self.send_json(403, {"error": "forbidden"})
+            path, _, query = self.path.partition("?")
+            if path == "/sensors":
+                feed = store.snapshot(gateway_name)
+                if notifier is not None:
+                    feed["alerts"] = notifier.summary()
+                return self.send_json(200, feed)
+            if path == "/history":
+                params = parse_qs(query)
+                mac = normalize_mac((params.get("id") or [""])[0])
+                range_name = (params.get("range") or ["day"])[0]
+                if range_name not in RANGES:
+                    return self.send_json(400, {"error": "range must be day, week or month"})
+                if history is None or mac not in store.items:
+                    return self.send_json(404, {"error": "unknown thermometer"})
+                return self.send_json(200, history.query(mac, range_name))
+            if path == "/health":
+                return self.send_json(200, {"ok": True})
+            return self.send_json(404, {"error": "not found"})
+
+        def denied(self):
+            self.send_json(405, {"error": "method not allowed"})
+
+        def do_POST(self):
+            """Only /labels: {"id": <address>, "name": <text or null>, "room": <text or null>},
+            at most 1 KB, for a thermometer this gateway knows."""
+            if not self.allowed():
+                return self.send_json(403, {"error": "forbidden"})
+            if self.path.partition("?")[0] != "/labels":
+                return self.denied()
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if not 0 < length <= 1024:
+                return self.send_json(400, {"error": "body must be 1 to 1024 bytes"})
+            try:
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                mac, name, room = body["id"], body.get("name"), body.get("room")
+                if not isinstance(mac, str) or not all(v is None or isinstance(v, str) for v in (name, room)):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+                return self.send_json(400, {"error": "expected {id, name, room}"})
+            if not store.set_label(mac, name, room):
+                return self.send_json(404, {"error": "unknown thermometer"})
+            try:
+                store.save()
+            except OSError:
+                logging.exception("Saving the state failed")
+            return self.send_json(200, {"ok": True})
+
+        do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = denied
+
+    return Handler
+
+
+def check_bind(bind_ip, allowed_networks):
+    networks = [ipaddress.ip_network(item) for item in allowed_networks]
+    bind = ipaddress.ip_address(bind_ip)
+    if bind.is_unspecified or not any(bind in network for network in networks):
+        raise RuntimeError("bind_ip must be a specific address inside allowed_networks (no 0.0.0.0)")
+    return networks
+
+
+def serve(bind_ip, port, handler):
+    while True:
+        try:
+            return ThreadingHTTPServer((bind_ip, port), handler)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != 10049:
+                raise
+            time.sleep(10)  # ZeroTier not up yet; never fall back to another interface.
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--config", default=str(ROOT / "thermo-gateway.json"))
+    parser.add_argument("--fake", help="serve fixture readings, no Bluetooth")
+    parser.add_argument("--bind", default="127.0.0.1", help="fake mode only")
+    parser.add_argument("--port", type=int, default=8795, help="fake mode only")
+    parser.add_argument("--test-notify", action="store_true", help="send one test notification and exit")
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    if args.fake:
+        store, name = load_fake(args.fake)
+        history = History()
+        history.seed_demo(store)
+        networks = check_bind(args.bind, ["127.0.0.0/8"])
+        notifier = Notifier({"alerts": {"temperature_high": 30}}, store, send=lambda *a: None)
+        server = serve(args.bind, args.port, handler_for(store, name, networks, history, notifier))
+        print(f"Fake thermometer gateway on {args.bind}:{args.port}", flush=True)
+        server.serve_forever(poll_interval=0.5)
+        return
+
+    import asyncio
+    config_path = Path(args.config)
+    cfg = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    networks = check_bind(cfg["bind_ip"], cfg["allowed_networks"])
+    if args.test_notify:
+        notifier = Notifier(cfg, Store())
+        if not notifier.enabled:
+            raise SystemExit("No ntfy topic configured (notify.topic or notify.from_file).")
+        notifier.post("🌡️ 溫濕度通知測試", "溫濕度閘道的通知設定成功：之後超出範圍、電量不足或收不到訊號時會通知你。", 3, ["white_check_mark"])
+        print("Test notification sent.")
+        return
+    log = RotatingFileHandler(config_path.with_name("thermo-gateway.log"), maxBytes=1048576, backupCount=2, encoding="utf-8")
+    log.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S"))
+    logging.getLogger().addHandler(log)
+    store = Store(cfg.get("sensors", []), discover=cfg.get("discover", True),
+                  state_path=config_path.with_name("thermo-state.json"))
+    worker = BleWorker(cfg, store)
+    threading.Thread(target=lambda: asyncio.run(worker.run()), daemon=True).start()
+
+    history = History(config_path.with_name("thermo-history.sqlite"), keep_days=int(cfg.get("history_days", 90)))
+
+    def saver():
+        while True:
+            time.sleep(SAMPLE_SECONDS - time.time() % SAMPLE_SECONDS + 1)
+            try:
+                store.save()
+                history.record(store)
+            except (OSError, sqlite3.Error):
+                logging.exception("Saving the state or history failed")
+
+    threading.Thread(target=saver, daemon=True).start()
+    notifier = Notifier(cfg, store)
+    if notifier.enabled:
+        threading.Thread(target=notifier.run, daemon=True).start()
+    else:
+        logging.info("No ntfy topic configured; notifications are off")
+    server = serve(cfg["bind_ip"], int(cfg.get("port", 18787)),
+                   handler_for(store, cfg.get("gateway_name", "閘道"), networks, history, notifier))
+    logging.info("Thermometer gateway listening on the configured address")
+    server.daemon_threads = True
+    server.serve_forever(poll_interval=1)
+
+
+if __name__ == "__main__":
+    main()

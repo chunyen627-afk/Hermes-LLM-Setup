@@ -1,0 +1,32 @@
+{
+  "path": "C:\\Users\\pjunm\\OneDrive\\Desktop\\H3 圖生影片完整操作手冊.docx",
+  "backup": "C:\\Users\\pjunm\\.cache\\hermes-strata-backups\\H3-manual-before-strata.docx",
+  "before": {
+    "bytes": 993158,
+    "sha256": "e04a049f5082952c6779ef1c53853698ba2b9b9b7a5019d306b6cc295c022a44",
+    "paragraphs": 180,
+    "tables": 9,
+    "images": 9
+  },
+  "after": {
+    "bytes": 993388,
+    "sha256": "30eb2ac2c93a97576a2077aad601de6ee9ccd153777bb46c41870894e2fdd1a4",
+    "paragraphs": 180,
+    "tables": 9,
+    "images": 9
+  },
+  "video_verification": {
+    "decoded_frames": 73,
+    "width": 512,
+    "height": 512,
+    "decoded_audio_frames": 96,
+    "bytes": 211657
+  },
+  "render_review": {
+    "status": "passed",
+    "pages": 15,
+    "reviewed_pages": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+    "renderer": "Independent Word PDF export and bundled PDFium at 150 DPI; bundled LibreOffice unavailable on Windows",
+    "checks": "All pages visually inspected; 9 embedded screenshots retained; no clipping, overlapping tables or missing text"
+  }
+}

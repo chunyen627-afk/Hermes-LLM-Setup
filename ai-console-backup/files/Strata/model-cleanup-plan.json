@@ -1,0 +1,275 @@
+{
+  "executed": true,
+  "required_before_deletion": [
+    "Live model acceptance",
+    "Hermes desktop backend",
+    "Restart recovery",
+    "Static image coexistence",
+    "H3 coexistence"
+  ],
+  "proposed_files": [
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-DFlash-bootstrap-Q8_0.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-DFlash-bootstrap-Q8_0.gguf",
+      "bytes": 1849482752,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        281474978362340
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-DFlash2-Q8_0.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-DFlash2-Q8_0.gguf",
+      "bytes": 2056414752,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        562949955024186
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "bytes": 17923394624,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        281474978194356
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
+      "bytes": 17923393664,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        844424932066258
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--Qwen3.6-35B-A3B-GGUF\\snapshots\\a483e9e6cbd595906af30beda3187c2663a1118c\\Qwen3.6-35B-A3B-UD-IQ4_NL_XL.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--Qwen3.6-35B-A3B-GGUF\\snapshots\\a483e9e6cbd595906af30beda3187c2663a1118c\\Qwen3.6-35B-A3B-UD-IQ4_NL_XL.gguf",
+      "bytes": 19500506080,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        1688849860281220
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--Qwen3.6-35B-A3B-GGUF\\snapshots\\a483e9e6cbd595906af30beda3187c2663a1118c\\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--Qwen3.6-35B-A3B-GGUF\\snapshots\\a483e9e6cbd595906af30beda3187c2663a1118c\\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "bytes": 17730509792,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        844424930543629
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.lmstudio\\models\\HauhauCS\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.lmstudio\\models\\HauhauCS\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+      "bytes": 21166758016,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        1688849860402836
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.lmstudio\\models\\unsloth\\DeepSeek-V4-Lite-Instruct-GGUF\\DeepSeek-V4-Lite-Instruct-Q4_K_M.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.lmstudio\\models\\unsloth\\DeepSeek-V4-Lite-Instruct-GGUF\\DeepSeek-V4-Lite-Instruct-Q4_K_M.gguf",
+      "bytes": 8988110240,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        3940649674069461
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.lmstudio\\models\\unsloth\\Qwen3-Coder-30B-A3B-Instruct-GGUF\\Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.lmstudio\\models\\unsloth\\Qwen3-Coder-30B-A3B-Instruct-GGUF\\Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+      "bytes": 17665334432,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        1688849860752567
+      ],
+      "reason": "Superseded chat model or its speculative draft",
+      "removed": true
+    }
+  ],
+  "preserved_gguf_files": [
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\mmproj-BF16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\mmproj-BF16.gguf",
+      "bytes": 931146304,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        2533274790826290
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\mmproj-Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\mmproj-Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
+      "bytes": 931146624,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        6473924466279397
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-31B-it-GGUF\\snapshots\\43e80d41a220ac7c83023daacd6a0d1fd8559251\\gemma-4-31B-it-IQ4_XS.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-31B-it-GGUF\\snapshots\\43e80d41a220ac7c83023daacd6a0d1fd8559251\\gemma-4-31B-it-IQ4_XS.gguf",
+      "bytes": 16372458016,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        1970324836991218
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-31B-it-GGUF\\snapshots\\43e80d41a220ac7c83023daacd6a0d1fd8559251\\mmproj-BF16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-31B-it-GGUF\\snapshots\\43e80d41a220ac7c83023daacd6a0d1fd8559251\\mmproj-BF16.gguf",
+      "bytes": 1200726624,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        3377699720544974
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\90f9618340396838ee7ff5b0ba2da27da62953d3\\gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\90f9618340396838ee7ff5b0ba2da27da62953d3\\gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+      "bytes": 3184494720,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        1407374883580086
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\ecc8b33b2c50598815e4b0f7cea6088e3ae7adb8\\gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\ecc8b33b2c50598815e4b0f7cea6088e3ae7adb8\\gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+      "bytes": 3184494720,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        2814749767241760
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\f064409f340b34190993560b2168133e5dbae558\\gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\f064409f340b34190993560b2168133e5dbae558\\gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+      "bytes": 3174043296,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        844424930542929
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\f064409f340b34190993560b2168133e5dbae558\\mmproj-BF16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--gemma-4-E2B-it-GGUF\\snapshots\\f064409f340b34190993560b2168133e5dbae558\\mmproj-BF16.gguf",
+      "bytes": 986833856,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        129759964263615521
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--Qwen3.6-35B-A3B-GGUF\\snapshots\\a483e9e6cbd595906af30beda3187c2663a1118c\\mmproj-BF16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.cache\\huggingface\\hub\\models--unsloth--Qwen3.6-35B-A3B-GGUF\\snapshots\\a483e9e6cbd595906af30beda3187c2663a1118c\\mmproj-BF16.gguf",
+      "bytes": 902822624,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        23643898043777591
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.lmstudio\\models\\HauhauCS\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive\\mmproj-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-f16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.lmstudio\\models\\HauhauCS\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive\\mmproj-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-f16.gguf",
+      "bytes": 899283072,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        2814749767245255
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.lmstudio\\models\\qwen2-vl\\mmproj-Qwen2-VL-2B-Instruct-f16.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.lmstudio\\models\\qwen2-vl\\mmproj-Qwen2-VL-2B-Instruct-f16.gguf",
+      "bytes": 1331656192,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        17169973579352695
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\.lmstudio\\models\\qwen2-vl\\Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\.lmstudio\\models\\qwen2-vl\\Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
+      "bytes": 986047232,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        5629499534344259
+      ],
+      "reason": "Vision/projector asset or outside the explicit chat cleanup list"
+    },
+    {
+      "path": "C:\\Users\\pjunm\\Strata-data\\models\\orca-iq3_xxs\\Qwen3.8-Flash-Next-Uncensored-IQ3_XXS-00001-of-00002.gguf",
+      "resolved_path": "C:\\Users\\pjunm\\Strata-data\\models\\orca-iq3_xxs\\Qwen3.8-Flash-Next-Uncensored-IQ3_XXS-00001-of-00002.gguf",
+      "bytes": 44637691008,
+      "symlink": false,
+      "physical_file_id": [
+        3625656403,
+        562949956375235
+      ],
+      "reason": "New candidate; always preserve"
+    }
+  ],
+  "proposed_unique_GiB": 116.23,
+  "preserve_other_assets": [
+    "ComfyUI-H3 models and outputs",
+    "Static-image models and outputs",
+    "Qwen3-VL safetensors",
+    "FunctionGemma projects/checkpoints",
+    "User documents",
+    "Cloud/network files"
+  ],
+  "note": "A proposal only. Symlink/blob references and running processes must be checked before cleanup."
+}

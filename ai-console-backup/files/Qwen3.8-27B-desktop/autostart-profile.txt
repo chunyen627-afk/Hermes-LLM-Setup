@@ -1,0 +1,16 @@
+# 開機自動啟動要用哪個模式（改這裡就好，不用碰排程）
+# 格式：THINK=xxx MODE=xxx CTX=xxxxx
+# 改完存檔即可，下次開機生效。要立刻套用就跑 2-STOP 再跑對應的 1-START。
+#
+# THINK : off  = 不思考（閒聊最快）
+#         low  = 適度思考（一般寫 code，預設）
+#         high = 深度思考（STM32 / RTOS / 硬體設計）
+#
+# MODE  : chat = 通用（temp 0.7，回答較自然）
+#         fw   = 韌體技術（temp 0.3，暫存器名和數字不易飄）
+#
+# CTX   : 143360 = 140K（建議，VRAM 有安全邊界）
+#         163840 = 160K（上限，CUDA2 只剩 ~200MB，有 OOM 風險）
+#         131072 = 128K（最保守）
+
+THINK=high MODE=fw CTX=143360

@@ -1,0 +1,6 @@
+{
+  "status": "passed",
+  "cases": 8,
+  "runner": "Existing pytest test functions executed directly without parameter decorators; pytest unavailable",
+  "active_desktop_reload": false
+}

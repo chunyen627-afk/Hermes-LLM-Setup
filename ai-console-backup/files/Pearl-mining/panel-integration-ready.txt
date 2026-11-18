@@ -1,0 +1,1 @@
+Stopped mining; restored AI power and automatic fans.
