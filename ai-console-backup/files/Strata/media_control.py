@@ -488,6 +488,7 @@ class Panel:
         frame = self.scroll_tab('AI 服務')
         mining = self.scroll_tab('GPU 挖礦')
         fpga = self.scroll_tab('FPGA 挖礦')
+        camera = self.scroll_tab('鏡頭')  # 11/19: the office webcam, live like the phone's 看鏡頭 page
         self.root.bind_all('<MouseWheel>', lambda e: self.canvases[self.tabs.index('current')].yview_scroll(int(-e.delta/120), 'units'))
         ttk.Label(frame, text='本機 AI 控制台', font=('Microsoft JhengHei',20,'bold')).pack(anchor='w')
         ttk.Label(frame, text='服務集中在背景執行，只保留這一個視窗。挖礦在「GPU 挖礦」「FPGA 挖礦」分頁。').pack(anchor='w', pady=(7,14))
@@ -539,6 +540,12 @@ class Panel:
         # 本機 → 停止 on the GPU tab stops it.
         self.wrapping(ttk.Label(frame, text='關閉此視窗只會停止 AI 服務（模型、生圖、生影片），本機挖礦照常；要停本機挖礦，'
                                              '到「GPU 挖礦」分頁按本機的「停止」。Hermes 桌面程式和其他礦機不受影響。')).pack(anchor='w', pady=(2,0))
+        try:
+            import sys; sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from camera_tab import CameraTab
+            self.camera_tab = CameraTab(self, camera, tab_index=3)
+        except Exception as error:  # the rest of the console must still work without the camera tab
+            ttk.Label(camera, text='鏡頭分頁無法載入：' + str(error), foreground='#b42318').pack(anchor='w')
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.after(100, (lambda:self.start(mode)) if mode else self.default_mode)
         self.root.after(500, self.tick)
