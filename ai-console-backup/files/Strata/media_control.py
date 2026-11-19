@@ -373,7 +373,14 @@ def checked(value):
 def save_json(path, value):
     temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
-    temporary.replace(path)
+    # 11/19: a reader holding the file open (helper/bridge polling it) makes the rename fail with
+    # WinError 5 for a moment; retry briefly instead of surfacing a console error.
+    for attempt in range(10):
+        try:
+            temporary.replace(path); return
+        except PermissionError:
+            if attempt == 9: raise
+            time.sleep(0.05)
 
 class ServiceJob:
     def __init__(self):
@@ -489,6 +496,7 @@ class Panel:
         mining = self.scroll_tab('GPU 挖礦')
         fpga = self.scroll_tab('FPGA 挖礦')
         camera = self.scroll_tab('鏡頭')  # 11/19: the office webcam, live like the phone's 看鏡頭 page
+        thermo = self.scroll_tab('溫濕度')  # 11/19: the thermometers, like the App's 溫濕度 tab
         self.root.bind_all('<MouseWheel>', lambda e: self.canvases[self.tabs.index('current')].yview_scroll(int(-e.delta/120), 'units'))
         ttk.Label(frame, text='本機 AI 控制台', font=('Microsoft JhengHei',20,'bold')).pack(anchor='w')
         ttk.Label(frame, text='服務集中在背景執行，只保留這一個視窗。挖礦在「GPU 挖礦」「FPGA 挖礦」分頁。').pack(anchor='w', pady=(7,14))
@@ -546,6 +554,11 @@ class Panel:
             self.camera_tab = CameraTab(self, camera, tab_index=3)
         except Exception as error:  # the rest of the console must still work without the camera tab
             ttk.Label(camera, text='鏡頭分頁無法載入：' + str(error), foreground='#b42318').pack(anchor='w')
+        try:
+            from thermo_tab import ThermoTab
+            self.thermo_tab = ThermoTab(self, thermo, tab_index=4)
+        except Exception as error:
+            ttk.Label(thermo, text='溫濕度分頁無法載入：' + str(error), foreground='#b42318').pack(anchor='w')
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.after(100, (lambda:self.start(mode)) if mode else self.default_mode)
         self.root.after(500, self.tick)
@@ -938,9 +951,13 @@ class Panel:
                                             self.mining_token,self.current,time.time(),
                                             bool(self.job and self.job.pids()))
             self.health_light.configure(text='● '+label, foreground=color)
-            self.write_state()
+            try:
+                self.write_state()
+            except OSError:
+                pass  # 11/19: transient lock on the state file; the next tick (1.5 s) writes it again
         except Exception as error:
-            self.last_error = str(error)
+            # 11/19: not stored in last_error — that made one passing glitch show 異常 forever while
+            # mining overwrote the message. The next successful tick repaints the light.
             self.status.set('控制台錯誤：'+str(error))
             self.health_light.configure(text='● 控制台異常', foreground='#b42318')
         self.root.after(1500,self.tick)
