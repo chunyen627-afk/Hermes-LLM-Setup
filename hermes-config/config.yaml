@@ -496,9 +496,9 @@ paste_collapse_threshold: 5
 paste_collapse_threshold_fallback: 5
 paste_collapse_char_threshold: 2000
 vertex:
-  project: cobalt-ship-192909
+  project: <REDACTED>
   location: us-central1
-  project_id: cobalt-ship-192909
+  project_id: <REDACTED>
   region: us-central1
 _config_version: 25
 session_reset:
